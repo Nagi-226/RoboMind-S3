@@ -25,6 +25,7 @@
 #include <cstring>
 
 #include "esp_log.h"
+#include "wifi_manager.h"
 
 static const char* TAG = "chat_ui";
 
@@ -38,6 +39,25 @@ static const lv_color_t COLOR_SEND_BTN     = lv_color_hex(0xE94560);
 static const lv_color_t COLOR_TEXT_WHITE   = lv_color_hex(0xEEEEEE);
 static const lv_color_t COLOR_TEXT_DIM     = lv_color_hex(0xAAAAAA);
 static const lv_color_t COLOR_STATUS_BG    = lv_color_hex(0x16213E);
+
+static std::string FormatWifiSignal() {
+    const int8_t rssi = WifiManager::GetInstance()->GetRssi();
+    const char* bars = "[----]";
+    if (rssi >= -50 && rssi != 0) {
+        bars = "[||||]";
+    } else if (rssi >= -65 && rssi != 0) {
+        bars = "[|||_]";
+    } else if (rssi >= -75 && rssi != 0) {
+        bars = "[||__]";
+    } else if (rssi >= -85 && rssi != 0) {
+        bars = "[|___]";
+    }
+
+    char buffer[32];
+    std::snprintf(buffer, sizeof(buffer), " WiFi%s RSSI:%ddBm", bars,
+                  static_cast<int>(rssi));
+    return std::string(buffer);
+}
 
 ChatUI* ChatUI::GetInstance() {
     static ChatUI instance;
@@ -300,7 +320,7 @@ void ChatUI::SetStatus(ChatEngine::Status status, const std::string& info) {
     case ChatEngine::Status::kError:      icon = LV_SYMBOL_CLOSE " "; break;
     }
 
-    std::string text = std::string(icon) + info;
+    std::string text = std::string(icon) + info + FormatWifiSignal();
     lv_label_set_text(status_label_, text.c_str());
 
     lv_color_t color = (status == ChatEngine::Status::kError)

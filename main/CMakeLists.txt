@@ -7,8 +7,9 @@ idf_component_register(
         "display_driver.cpp"
         "chat_ui.cpp"
         "audio_io.cpp"
-        # "camera_driver.cpp"   # TODO v0.1.2: uncomment when OV5640 pins confirmed
-        # "sd_card.cpp"         # TODO v0.1.2: uncomment when SD card pins confirmed
+        "camera_driver.cpp"
+        "sd_card.cpp"
+        "system_monitor.cpp"
     INCLUDE_DIRS
         "."
     REQUIRES
@@ -21,4 +22,6 @@ idf_component_register(
     PRIV_REQUIRES
         driver
         esp_timer
+        fatfs
+        sdmmc
 )

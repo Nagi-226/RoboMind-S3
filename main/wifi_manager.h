@@ -41,6 +41,9 @@ public:
     /// 获取当前连接状态
     WifiState GetState() const;
 
+    /// Get current WiFi RSSI in dBm. Returns 0 when unknown/disconnected.
+    int8_t GetRssi() const;
+
     /// 设置状态变化回调 (在 WiFi 事件上下文中调用，需线程安全)
     using StateCallback = std::function<void(WifiState state, const std::string& info)>;
     void SetStateCallback(StateCallback callback);

@@ -9,13 +9,6 @@
 #include "freertos/FreeRTOS.h"
 #include "sdkconfig.h"
 
-#ifndef CONFIG_ROBOMIND_CAMERA_PIN_SCL
-#define CONFIG_ROBOMIND_CAMERA_PIN_SCL 17
-#endif
-
-#ifndef CONFIG_ROBOMIND_CAMERA_PIN_SDA
-#define CONFIG_ROBOMIND_CAMERA_PIN_SDA 18
-#endif
 
 static const char* TAG = "camera";
 

@@ -13,13 +13,12 @@
 
 #include "display_driver.h"
 
-#include <cstdio>
-#include <cstring>
-
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "driver/ledc.h"
+#include "driver/spi_common.h"
 #include "driver/spi_master.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_rom_sys.h"
 #include "esp_timer.h"
@@ -43,57 +42,6 @@ static const char* TAG = "display";
 #error "No display driver selected! Enable one in menuconfig: RoboMind S3 -> Display -> Display Driver"
 #endif
 
-#ifndef CONFIG_ROBOMIND_DISPLAY_SPI_HOST
-#define CONFIG_ROBOMIND_DISPLAY_SPI_HOST 2  // Kconfig default: 2 (SPI3_HOST)
-#endif
-#ifndef CONFIG_ROBOMIND_DISPLAY_PIN_MOSI
-#define CONFIG_ROBOMIND_DISPLAY_PIN_MOSI 11  // Kconfig default: 11
-#endif
-#ifndef CONFIG_ROBOMIND_DISPLAY_PIN_MISO
-#define CONFIG_ROBOMIND_DISPLAY_PIN_MISO 13  // Kconfig default: 13
-#endif
-#ifndef CONFIG_ROBOMIND_DISPLAY_PIN_CLK
-#define CONFIG_ROBOMIND_DISPLAY_PIN_CLK 12  // Kconfig default: 12
-#endif
-#ifndef CONFIG_ROBOMIND_DISPLAY_PIN_CS
-#define CONFIG_ROBOMIND_DISPLAY_PIN_CS 10  // Kconfig default: 10
-#endif
-#ifndef CONFIG_ROBOMIND_DISPLAY_PIN_DC
-#define CONFIG_ROBOMIND_DISPLAY_PIN_DC 14  // Kconfig default: 14
-#endif
-#ifndef CONFIG_ROBOMIND_DISPLAY_PIN_RST
-#define CONFIG_ROBOMIND_DISPLAY_PIN_RST 9  // Kconfig default: 9
-#endif
-#ifndef CONFIG_ROBOMIND_DISPLAY_PIN_BL
-#define CONFIG_ROBOMIND_DISPLAY_PIN_BL 8  // Kconfig default: 8
-#endif
-#ifndef CONFIG_ROBOMIND_DISPLAY_ROTATION
-#define CONFIG_ROBOMIND_DISPLAY_ROTATION 0  // Kconfig default: 0
-#endif
-#ifndef CONFIG_ROBOMIND_DISPLAY_WIDTH
-#define CONFIG_ROBOMIND_DISPLAY_WIDTH 240  // Kconfig default: 240
-#endif
-#ifndef CONFIG_ROBOMIND_DISPLAY_HEIGHT
-#define CONFIG_ROBOMIND_DISPLAY_HEIGHT 320  // Kconfig default: 320
-#endif
-#ifndef CONFIG_ROBOMIND_TOUCH_SPI_HOST
-#define CONFIG_ROBOMIND_TOUCH_SPI_HOST 2
-#endif
-#ifndef CONFIG_ROBOMIND_TOUCH_PIN_CS
-#define CONFIG_ROBOMIND_TOUCH_PIN_CS 15
-#endif
-#ifndef CONFIG_ROBOMIND_TOUCH_PIN_IRQ
-#define CONFIG_ROBOMIND_TOUCH_PIN_IRQ 13
-#endif
-#ifndef CONFIG_ROBOMIND_TOUCH_I2C_SDA
-#define CONFIG_ROBOMIND_TOUCH_I2C_SDA 17
-#endif
-#ifndef CONFIG_ROBOMIND_TOUCH_I2C_SCL
-#define CONFIG_ROBOMIND_TOUCH_I2C_SCL 18
-#endif
-#ifndef CONFIG_ROBOMIND_TOUCH_I2C_ADDR
-#define CONFIG_ROBOMIND_TOUCH_I2C_ADDR 0x38
-#endif
 
 static spi_device_handle_t s_spi_device = nullptr;
 

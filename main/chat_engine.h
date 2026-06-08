@@ -14,14 +14,14 @@
 #define ROBOMIND_CHAT_ENGINE_H
 
 #include <cstddef>
-#include <cstdint>
+#include <atomic>
 #include <deque>
 #include <functional>
 #include <string>
-#include <vector>
 
 #include "esp_err.h"
 #include "esp_http_client.h"
+#include "freertos/semphr.h"
 
 class ChatEngine {
 public:
@@ -66,10 +66,12 @@ public:
     void SetStatusCallback(StatusCallback callback);
 
     /// 获取当前历史消息数
-    size_t GetHistorySize() const { return history_.size(); }
+    size_t GetHistorySize() const {
+        return history_.size();
+    }
 
     /// 是否正在等待回复
-    bool IsBusy() const { return busy_; }
+    bool IsBusy() const { return busy_.load(); }
 
 private:
     ChatEngine() = default;
@@ -95,6 +97,9 @@ private:
     /// Trim old chat messages while keeping the system prompt.
     void TrimHistory();
 
+    /// Handle local commands such as #status/#help before cloud API dispatch.
+    std::string HandleLocalCommand(const std::string& text);
+
     std::deque<Message> history_;
     std::string api_endpoint_;
     std::string api_key_;
@@ -105,8 +110,9 @@ private:
     MessageCallback message_callback_;
     StatusCallback status_callback_;
 
-    bool busy_{false};
+    std::atomic<bool> busy_{false};
     int max_history_{20};
+    mutable SemaphoreHandle_t history_mutex_{nullptr};
 
     std::string pending_prefix_;  // 累积的 SSE 前缀 (data: 拼接)
     std::string sse_buffer_;

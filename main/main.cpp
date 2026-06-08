@@ -11,21 +11,22 @@
  *   6. FreeRTOS 双核任务调度
  */
 
-#include <cstdio>
-#include <cstring>
-
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include "sdkconfig.h"
 
 #include "wifi_manager.h"
 #include "display_driver.h"
 #include "chat_ui.h"
 #include "chat_engine.h"
+#include "camera_driver.h"
+#include "sd_card.h"
+#include "audio_io.h"
+#include "system_monitor.h"
 
 static const char* TAG = "robo_main";
 
@@ -87,6 +88,42 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "ChatEngine init failed");
         esp_restart();
     }
+
+    // --- 5.5. Optional module initialization ---
+#if CONFIG_ROBOMIND_CAMERA_PIN_SCL
+    {
+        auto* camera = CameraDriver::GetInstance();
+        if (camera->Initialize()) {
+            ESP_LOGI(TAG, "Camera driver initialized OK");
+        } else {
+            ESP_LOGW(TAG, "Camera init failed; expected if no OV5640 attached");
+        }
+    }
+#endif
+
+#if CONFIG_ROBOMIND_SD_PIN_CS
+    {
+        auto* sd = SdCard::GetInstance();
+        if (sd->Mount()) {
+            ESP_LOGI(TAG, "SD card mounted at /sdcard");
+        } else {
+            ESP_LOGW(TAG, "SD card mount failed; expected if no card inserted");
+        }
+    }
+#endif
+
+#if CONFIG_ROBOMIND_ENABLE_AUDIO
+    {
+        auto* audio = AudioIO::GetInstance();
+        if (audio->Initialize()) {
+            ESP_LOGI(TAG, "Audio I/O initialized OK");
+        } else {
+            ESP_LOGW(TAG, "Audio init failed; check I2S pins");
+        }
+    }
+#endif
+
+    SystemMonitor::GetInstance()->Snapshot();
 
     ui->SetInputCallback([engine](const std::string& text) {
         engine->SendMessage(text);

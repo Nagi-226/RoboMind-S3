@@ -14,7 +14,7 @@ This file provides guidance to **Claude Code** when working with code in this re
 ---
 
 ## 🎯 Claude Code 职责定位
-> Current version: v0.0.8 (pre-board audio I/O + touch drivers).
+> Current version: v0.0.9 ✅ (pre-board phase 100% complete). Board expected tomorrow.
 
 ```
 你是 Architect，管理一个 3 人实现团队。

@@ -15,25 +15,6 @@
 #include "sdmmc_cmd.h"
 #include "sdkconfig.h"
 
-#ifndef CONFIG_ROBOMIND_SD_MODE
-#define CONFIG_ROBOMIND_SD_MODE 0
-#endif
-
-#ifndef CONFIG_ROBOMIND_SD_PIN_CS
-#define CONFIG_ROBOMIND_SD_PIN_CS 21
-#endif
-
-#ifndef CONFIG_ROBOMIND_SD_PIN_MOSI
-#define CONFIG_ROBOMIND_SD_PIN_MOSI 11
-#endif
-
-#ifndef CONFIG_ROBOMIND_SD_PIN_MISO
-#define CONFIG_ROBOMIND_SD_PIN_MISO 13
-#endif
-
-#ifndef CONFIG_ROBOMIND_SD_PIN_CLK
-#define CONFIG_ROBOMIND_SD_PIN_CLK 12
-#endif
 
 static const char* TAG = "sd_card";
 

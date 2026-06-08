@@ -10,7 +10,6 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
-#include "esp_mac.h"
 #include "esp_wifi.h"
 #include "esp_netif.h"
 #include "freertos/FreeRTOS.h"
@@ -22,17 +21,6 @@ static const char* TAG = "wifi_mgr";
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
-#ifndef CONFIG_ROBOMIND_WIFI_MAX_RETRY
-#define CONFIG_ROBOMIND_WIFI_MAX_RETRY 5
-#endif
-
-// --- Kconfig defaults ---
-#ifndef CONFIG_ROBOMIND_WIFI_SSID
-#define CONFIG_ROBOMIND_WIFI_SSID "MyWiFi"
-#endif
-#ifndef CONFIG_ROBOMIND_WIFI_PASSWORD
-#define CONFIG_ROBOMIND_WIFI_PASSWORD "password"
-#endif
 
 static EventGroupHandle_t s_wifi_event_group = nullptr;
 static esp_event_handler_instance_t s_wifi_event_handler = nullptr;
@@ -215,6 +203,14 @@ std::string WifiManager::GetIpAddress() const {
 
 WifiState WifiManager::GetState() const {
     return state_;
+}
+
+int8_t WifiManager::GetRssi() const {
+    wifi_ap_record_t ap_info = {};
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        return ap_info.rssi;
+    }
+    return 0;
 }
 
 void WifiManager::SetStateCallback(StateCallback callback) {

@@ -380,15 +380,25 @@ ESP-IDF uses Kconfig for compile-time configuration, not `#ifdef` blocks:
 - [x] CX-6 本地 Python 结构验证通过 (YAML/Kconfig/headers/markdown)
 - [ ] CX-7 `idf.py fullclean build` — ⏳ 待 ESP-IDF 环境就绪
 
-### 🔵 v0.0.8 — 音频 I/O + 触摸驱动实现 (当前)
-- [ ] CX-1 实现 I2S 麦克风录音 (I2S RX + DMA 双缓冲 + FreeRTOS task)
-- [ ] CX-2 实现 I2S 扬声器播放 (I2S TX + PlayPcm)
-- [ ] CX-3 实现 XPT2046 触摸驱动 (SPI ADC 读取 + 压力检测 + 坐标输出)
-- [ ] CX-4 实现 FT6x06 触摸驱动 (I2C 寄存器读取 + 多点触摸)
-- [ ] CX-5 实现 LvglTouchCallback 接入 (根据 Kconfig 分发到 XPT2046/FT6x06)
-- [ ] CX-6 补充 Kconfig 触摸/音频缺失项 (IRQ 引脚 / 采样率 / 缓冲区大小)
-- [ ] CX-7 更新 CMakeLists.txt 新增依赖 (如有)
-- [ ] CX-8 本地 Python 验证 + 输出完成报告
+### 🔵 v0.0.8 — 音频 I/O + 触摸驱动实现 (完成 ✅)
+- [x] CX-1 实现 I2S 麦克风录音 (I2S_NUM_0 RX, 16kHz/16-bit/mono, DMA 双 SPIRAM buffer, FreeRTOS audio_cap task)
+- [x] CX-2 实现 I2S 扬声器播放 (I2S_NUM_1 TX, PlayPcm 同步分块写入)
+- [x] CX-3 实现 XPT2046 触摸驱动 (SPI mode 0, 2MHz, 12-bit ADC, Z1/Z2 压力判断, raw→screen 映射 + rotation)
+- [x] CX-4 实现 FT6x06 触摸驱动 (I2C 100kHz, 读 0x02 触摸点数, 提取 X/Y + rotation)
+- [x] CX-5 LvglTouchCallback 接入 (Kconfig 分发 XPT2046/FT6x06, LV_INDEV_STATE_PRESSED)
+- [x] CX-6 Kconfig 新增 TOUCH_PIN_IRQ, AUDIO_SAMPLE_RATE, AUDIO_BUFFER_MS
+- [x] CX-7 CMakeLists.txt 验证通过 (audio_io 已注册, driver 已在 PRIV_REQUIRES)
+- [x] CX-8 本地 Python 验证通过 (51 configs with help, no duplicates)
+
+### 🔵 v0.0.9 — 系统集成 + 健康监控 (当前)
+- [ ] CX-1 在 main.cpp 中串联所有可选模块初始化 (Camera/SD/Audio 按 Kconfig 条件初始化)
+- [ ] CX-2 创建 system_monitor.h/cpp (FreeRTOS task stats + heap watermark + module status)
+- [ ] CX-3 在 chat_engine 中拦截本地系统命令 (#status / #photo / #voice / #help)
+- [ ] CX-4 WiFi RSSI 监控 + 状态栏信号强度显示
+- [ ] CX-5 实现 #status 命令 (heap/RSSI/uptime/module states 格式化输出)
+- [ ] CX-6 实现 #photo 命令桩 (触发 CameraDriver → 暂存 RAM → 准备存 TF 卡)
+- [ ] CX-7 实现 #voice 命令桩 (触发 AudioIO 录音 → 准备送 ASR)
+- [ ] CX-8 本地 Python 验证 + 输出 v0.0.9 完成报告
 
 ### 🟢 v0.1.0-0.1.4 — 板子启动 (等板子到货)
 - [ ] v0.1.0: 开箱 + 拍照 + 组件确认

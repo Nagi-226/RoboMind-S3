@@ -9,16 +9,15 @@
 #include "chat_engine.h"
 
 #include <cJSON.h>
-#include <cstdio>
-#include <cstring>
 
-#include "esp_check.h"
+
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "system_monitor.h"
 
 static const char* TAG = "chat_engine";
 
@@ -26,38 +25,18 @@ static TaskHandle_t s_chat_task = nullptr;
 static SemaphoreHandle_t s_request_sem = nullptr;
 static std::string s_pending_message;
 
-// --- Kconfig defaults ---
-#ifndef CONFIG_ROBOMIND_AI_API_ENDPOINT
-#define CONFIG_ROBOMIND_AI_API_ENDPOINT "https://api.openai.com/v1/chat/completions"
-#endif
-#ifndef CONFIG_ROBOMIND_AI_API_KEY
-#define CONFIG_ROBOMIND_AI_API_KEY ""
-#endif
-#ifndef CONFIG_ROBOMIND_AI_MODEL_NAME
-#define CONFIG_ROBOMIND_AI_MODEL_NAME "gpt-4o-mini"
-#endif
-#ifndef CONFIG_ROBOMIND_AI_SYSTEM_PROMPT
-#define CONFIG_ROBOMIND_AI_SYSTEM_PROMPT ""
-#endif
-#ifndef CONFIG_ROBOMIND_AI_MAX_TOKENS
-#define CONFIG_ROBOMIND_AI_MAX_TOKENS 1024
-#endif
-#ifndef CONFIG_ROBOMIND_AI_TEMPERATURE
-#define CONFIG_ROBOMIND_AI_TEMPERATURE 70
-#endif
-#ifndef CONFIG_ROBOMIND_CHAT_HISTORY_MAX
-#define CONFIG_ROBOMIND_CHAT_HISTORY_MAX 20
-#endif
-#ifndef CONFIG_ROBOMIND_HTTP_TIMEOUT_MS
-#define CONFIG_ROBOMIND_HTTP_TIMEOUT_MS 30000
-#endif
 
 ChatEngine* ChatEngine::GetInstance() {
     static ChatEngine instance;
     return &instance;
 }
 
-ChatEngine::~ChatEngine() = default;
+ChatEngine::~ChatEngine() {
+    if (history_mutex_) {
+        vSemaphoreDelete(history_mutex_);
+        history_mutex_ = nullptr;
+    }
+}
 
 bool ChatEngine::Initialize() {
     api_endpoint_ = CONFIG_ROBOMIND_AI_API_ENDPOINT;
@@ -65,6 +44,14 @@ bool ChatEngine::Initialize() {
     model_name_ = CONFIG_ROBOMIND_AI_MODEL_NAME;
     system_prompt_ = CONFIG_ROBOMIND_AI_SYSTEM_PROMPT;
     max_history_ = CONFIG_ROBOMIND_CHAT_HISTORY_MAX;
+
+    if (!history_mutex_) {
+        history_mutex_ = xSemaphoreCreateMutex();
+        if (!history_mutex_) {
+            ESP_LOGE(TAG, "history mutex creation failed");
+            return false;
+        }
+    }
 
     if (system_prompt_.empty()) {
         system_prompt_ = "You are RoboMind, a concise and helpful robot assistant.";
@@ -95,12 +82,13 @@ bool ChatEngine::Initialize() {
 
 void ChatEngine::SetSystemPrompt(const std::string& prompt) {
     system_prompt_ = prompt;
-    // 替换或插入 system message
+    if (history_mutex_) xSemaphoreTake(history_mutex_, portMAX_DELAY);
     if (!history_.empty() && history_.front().role == "system") {
         history_.front().content = prompt;
     } else {
         history_.push_front({"system", prompt});
     }
+    if (history_mutex_) xSemaphoreGive(history_mutex_);
 }
 
 void ChatEngine::SetMessageCallback(MessageCallback callback) {
@@ -112,10 +100,12 @@ void ChatEngine::SetStatusCallback(StatusCallback callback) {
 }
 
 void ChatEngine::ClearHistory() {
+    if (history_mutex_) xSemaphoreTake(history_mutex_, portMAX_DELAY);
     history_.clear();
     if (!system_prompt_.empty()) {
         history_.push_back({"system", system_prompt_});
     }
+    if (history_mutex_) xSemaphoreGive(history_mutex_);
 }
 
 bool ChatEngine::SendMessage(const std::string& user_text) {
@@ -128,9 +118,29 @@ bool ChatEngine::SendMessage(const std::string& user_text) {
         return false;
     }
 
+    if (!user_text.empty() && user_text[0] == '#') {
+        std::string response = HandleLocalCommand(user_text);
+        if (!response.empty()) {
+            if (history_mutex_) xSemaphoreTake(history_mutex_, portMAX_DELAY);
+            history_.push_back({"user", user_text});
+            history_.push_back({"assistant", response});
+            TrimHistory();
+            if (history_mutex_) xSemaphoreGive(history_mutex_);
+            if (message_callback_) {
+                message_callback_("assistant", response);
+            }
+            if (status_callback_) {
+                status_callback_(Status::kDone, "");
+            }
+            return true;
+        }
+    }
+
     last_user_message_ = user_text;
+    if (history_mutex_) xSemaphoreTake(history_mutex_, portMAX_DELAY);
     history_.push_back({"user", user_text});
     TrimHistory();
+    if (history_mutex_) xSemaphoreGive(history_mutex_);
 
     busy_ = true;
     if (status_callback_) {
@@ -162,8 +172,29 @@ void ChatEngine::TrimHistory() {
     while (history_.size() > static_cast<size_t>(max_history_ + 1)) {
         auto it = history_.begin();
         if (it->role == "system") ++it;
-        if (it != history_.end()) history_.erase(it);
+    if (it != history_.end()) history_.erase(it);
     }
+}
+
+std::string ChatEngine::HandleLocalCommand(const std::string& text) {
+    if (text == "#status") {
+        SystemHealth health = SystemMonitor::GetInstance()->Snapshot();
+        return SystemMonitor::GetInstance()->FormatHealth(health);
+    }
+    if (text == "#photo") {
+        return "Photo capture queued. (Will save to /sdcard/photos/ when SD available.)";
+    }
+    if (text == "#voice") {
+        return "Voice recording started. (ASR pipeline pending Phase 3.)";
+    }
+    if (text == "#help") {
+        return "Commands: #status #photo #voice #help #clear";
+    }
+    if (text == "#clear") {
+        ClearHistory();
+        return "Chat history cleared.";
+    }
+    return "";
 }
 
 std::string ChatEngine::BuildRequestBody() const {
@@ -174,6 +205,7 @@ std::string ChatEngine::BuildRequestBody() const {
     float temperature = static_cast<float>(CONFIG_ROBOMIND_AI_TEMPERATURE) / 100.0f;
     cJSON_AddNumberToObject(root, "temperature", temperature);
 
+    if (history_mutex_) xSemaphoreTake(history_mutex_, portMAX_DELAY);
     cJSON* messages = cJSON_AddArrayToObject(root, "messages");
     for (const auto& msg : history_) {
         cJSON* msg_obj = cJSON_CreateObject();
@@ -181,6 +213,7 @@ std::string ChatEngine::BuildRequestBody() const {
         cJSON_AddStringToObject(msg_obj, "content", msg.content.c_str());
         cJSON_AddItemToArray(messages, msg_obj);
     }
+    if (history_mutex_) xSemaphoreGive(history_mutex_);
 
     char* body = cJSON_PrintUnformatted(root);
     std::string result(body);
@@ -341,13 +374,14 @@ void ChatEngine::DoChatRequest() {
                                  "API returned " + std::to_string(status_code));
             }
         } else {
-            // 记录 assistant 消息 (即使为空也记录，避免对话历史错位)
+            if (history_mutex_) xSemaphoreTake(history_mutex_, portMAX_DELAY);
             if (!full_response.empty()) {
                 history_.push_back({"assistant", full_response});
             } else {
                 history_.push_back({"assistant", "[empty response]"});
             }
             TrimHistory();
+            if (history_mutex_) xSemaphoreGive(history_mutex_);
 
             // 流正常结束但可能未收到 [DONE] (某些 API 实现不发送)
             // 强制通知 UI 完成，避免状态卡在 kReceiving

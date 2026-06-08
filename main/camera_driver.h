@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <vector>
 
 class CameraDriver {
 public:
@@ -15,6 +14,7 @@ public:
 
     bool WriteReg(uint16_t reg, uint8_t val);
     bool ReadReg(uint16_t reg, uint8_t* val);
+    bool IsInitialized() const { return initialized_; }
 
     using FrameCallback = std::function<void(const uint8_t* data, size_t len)>;
     void SetFrameCallback(FrameCallback cb);
