@@ -1,0 +1,33 @@
+# Auto-detect text files, normalize line endings
+* text=auto
+
+# C++ source - always LF (ESP-IDF requires Unix line endings)
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+
+# Build system - always LF
+CMakeLists.txt text eol=lf
+*.cmake text eol=lf
+Kconfig* text eol=lf
+sdkconfig* text eol=lf
+
+# Scripts - always LF
+*.sh text eol=lf
+*.py text eol=lf
+
+# Markdown - always LF (cross-platform compatibility)
+*.md text eol=lf
+
+# Binary files
+*.bin binary
+*.elf binary
+*.jpg binary
+*.png binary
+*.pdf binary
+
+# CSVs and configs - LF
+*.csv text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
