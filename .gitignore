@@ -1,6 +1,10 @@
 # Graphify — generated knowledge graph (rebuild locally)
 graphify-out/
 
+# Planning — runtime state only (tasks.json + schema.md are tracked)
+.planning/loop_state.json
+.planning/archive/
+
 # ESP-IDF build artifacts
 build/
 sdkconfig

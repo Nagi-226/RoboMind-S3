@@ -1,0 +1,344 @@
+{
+  "_schema": "1.0",
+  "_description": "RoboMind-S3 自动化任务队列。Claude 规划版本后生成，调度循环引擎按序消费。",
+  "_updated": "2026-06-08T21:00:00Z",
+
+  "loop_config": {
+    "mode": "sequential",
+    "stop_on_failure": true,
+    "max_retries_per_task": 3,
+    "notify_claude_on_batch_complete": true,
+    "auto_advance_version": false,
+    "require_claude_review_after_each_version": true
+  },
+
+  "current_version": "v0.0.9",
+
+  "task_queue": [
+    {
+      "id": "CX-v0.0.9-01",
+      "agent": "codex",
+      "model": "GPT-5.5",
+      "priority": "P0",
+      "status": "ready",
+      "category": "implementation",
+      "description": "串联所有可选模块到 main.cpp (Camera/SD/Audio 按 Kconfig 条件初始化)",
+      "prompt_ref": "prompts/v0.0.9-codex-integration.md",
+      "validation": {
+        "script": "python validate_v0.0.9.py --check main_wiring",
+        "ci_jobs": ["kconfig-check"],
+        "auto_accept": true
+      },
+      "depends_on": [],
+      "retries": 0
+    },
+    {
+      "id": "CX-v0.0.9-02",
+      "agent": "codex",
+      "model": "GPT-5.5",
+      "priority": "P0",
+      "status": "ready",
+      "category": "implementation",
+      "description": "创建 system_monitor.h/cpp (FreeRTOS stats + heap watermark + module status)",
+      "prompt_ref": "prompts/v0.0.9-codex-integration.md",
+      "validation": {
+        "script": "python validate_v0.0.9.py --check system_monitor",
+        "ci_jobs": [],
+        "auto_accept": true
+      },
+      "depends_on": [],
+      "retries": 0
+    },
+    {
+      "id": "CX-v0.0.9-03",
+      "agent": "codex",
+      "model": "GPT-5.5",
+      "priority": "P0",
+      "status": "ready",
+      "category": "implementation",
+      "description": "在 chat_engine 中拦截本地系统命令 (#status / #photo / #voice / #help / #clear)",
+      "prompt_ref": "prompts/v0.0.9-codex-integration.md",
+      "validation": {
+        "script": "python validate_v0.0.9.py --check local_commands",
+        "ci_jobs": [],
+        "auto_accept": true
+      },
+      "depends_on": ["CX-v0.0.9-02"],
+      "retries": 0
+    },
+    {
+      "id": "CX-v0.0.9-04",
+      "agent": "codex",
+      "model": "GPT-5.5",
+      "priority": "P0",
+      "status": "ready",
+      "category": "implementation",
+      "description": "WiFi RSSI 监控 + 状态栏信号强度显示",
+      "prompt_ref": "prompts/v0.0.9-codex-integration.md",
+      "validation": {
+        "script": "python validate_v0.0.9.py --check wifi_rssi",
+        "ci_jobs": [],
+        "auto_accept": true
+      },
+      "depends_on": ["CX-v0.0.9-03"],
+      "retries": 0
+    },
+    {
+      "id": "CX-v0.0.9-05",
+      "agent": "codex",
+      "model": "GPT-5.5",
+      "priority": "P1",
+      "status": "ready",
+      "category": "implementation",
+      "description": "注册新文件到 CMakeLists.txt + 补充依赖 (fatfs/sdmmc)",
+      "prompt_ref": "prompts/v0.0.9-codex-integration.md",
+      "validation": {
+        "script": "python validate_v0.0.9.py --check cmake",
+        "ci_jobs": [],
+        "auto_accept": true
+      },
+      "depends_on": ["CX-v0.0.9-02"],
+      "retries": 0
+    },
+
+    {
+      "id": "CW-PRE-01",
+      "agent": "codewhale",
+      "model": "DS-v4-pro",
+      "priority": "P0",
+      "status": "ready",
+      "category": "quality",
+      "description": "Plan→Agent 审计: 清理冗余 #ifndef CONFIG_* 后备宏",
+      "detail": "42 个 #ifndef CONFIG_* 中有两类: (a) bool config 禁用时的安全后备(保留); (b) int config 的冗余后备(删除)。逐文件审计，对 int 类型且 Kconfig 有 default 值的 config，删除其 #ifndef 后备宏。保留 bool 类型 config 的后备宏。",
+      "affected_files": [
+        "main/display_driver.cpp",
+        "main/chat_engine.cpp",
+        "main/wifi_manager.cpp",
+        "main/audio_io.cpp",
+        "main/camera_driver.cpp",
+        "main/sd_card.cpp"
+      ],
+      "validation": {
+        "manual": "CodeWhale Plan 模式审计 → Agent 模式逐文件清理 → codewhale review 自审",
+        "ci_jobs": ["kconfig-check"],
+        "auto_accept": false
+      },
+      "depends_on": [],
+      "retries": 0
+    },
+    {
+      "id": "CW-PRE-02",
+      "agent": "codewhale",
+      "model": "DS-v4-pro",
+      "priority": "P1",
+      "status": "ready",
+      "category": "quality",
+      "description": "Plan→Agent 审计: Kconfig 默认值 vs hardware_spec.md 一致性校验",
+      "detail": "逐项对比 main/Kconfig.projbuild 中的 GPIO 默认值与 docs/hardware_spec.md 中的推测值。标记不一致项，不修改（等板子到货后由说明书确认）。输出差异报告到 docs/reviews/kconfig-gpio-audit.md。",
+      "affected_files": [
+        "main/Kconfig.projbuild",
+        "docs/hardware_spec.md"
+      ],
+      "validation": {
+        "manual": "输出差异报告，Claude 审查",
+        "ci_jobs": [],
+        "auto_accept": false
+      },
+      "depends_on": [],
+      "retries": 0
+    },
+    {
+      "id": "CW-PRE-03",
+      "agent": "codewhale",
+      "model": "DS-v4-pro",
+      "priority": "P2",
+      "status": "ready",
+      "category": "quality",
+      "description": "Plan→Agent 审计: 头文件包含依赖清理",
+      "detail": "Plan 模式逐文件检查: (a) 是否有 #include 但未使用的头文件; (b) 是否缺少隐式依赖的头文件(当前靠传递包含)。输出审计报告，标注每个文件的问题行。",
+      "affected_files": [
+        "main/*.cpp",
+        "main/*.h"
+      ],
+      "validation": {
+        "manual": "输出审计报告，Claude 审查后决定是否修复",
+        "ci_jobs": [],
+        "auto_accept": false
+      },
+      "depends_on": [],
+      "retries": 0
+    },
+
+    {
+      "id": "RX-PRE-01",
+      "agent": "reasonix",
+      "model": "DS-v4-pro",
+      "priority": "P0",
+      "status": "ready",
+      "category": "audit",
+      "description": "错误传播链审计: 追踪每个模块的错误路径覆盖率",
+      "detail": "逐模块追踪: 每个 esp_err_t 返回值是否被检查？每个 false 返回值是否有对应 ESP_LOGE？每个失败分支是否正确释放已分配资源？重点审计 camera_driver.cpp (新增) + audio_io.cpp (新增) + sd_card.cpp (新增)。输出审计报告到 docs/reviews/error-path-audit.md。",
+      "affected_files": [
+        "main/camera_driver.cpp",
+        "main/audio_io.cpp",
+        "main/sd_card.cpp",
+        "main/system_monitor.cpp"
+      ],
+      "validation": {
+        "manual": "输出审计报告，标注每个发现的具体行号 + 风险等级",
+        "ci_jobs": [],
+        "auto_accept": false
+      },
+      "depends_on": [],
+      "retries": 0
+    },
+    {
+      "id": "RX-PRE-02",
+      "agent": "reasonix",
+      "model": "DS-v4-pro",
+      "priority": "P1",
+      "status": "ready",
+      "category": "audit",
+      "description": "FreeRTOS 并发安全审计: Core 0 vs Core 1 共享状态分析",
+      "detail": "分析所有跨核心的共享数据访问: (a) chat_engine s_engine_for_http 在 Core 1, UI callback 在 Core 0; (b) wifi_manager state_ 被 EventHandler(中断上下文) 和 Connect()(任务上下文) 访问; (c) display_driver s_spi_device 全局静态。标注每个共享点的并发安全性: ✅线程安全 / ⚠️需确认 / 🔴潜在竞态。输出审计报告到 docs/reviews/concurrency-audit.md。",
+      "affected_files": [
+        "main/chat_engine.cpp",
+        "main/wifi_manager.cpp",
+        "main/display_driver.cpp"
+      ],
+      "validation": {
+        "manual": "输出审计报告，标注并发安全等级",
+        "ci_jobs": [],
+        "auto_accept": false
+      },
+      "depends_on": [],
+      "retries": 0
+    },
+    {
+      "id": "RX-PRE-03",
+      "agent": "reasonix",
+      "model": "DS-v4-pro",
+      "priority": "P2",
+      "status": "ready",
+      "category": "audit",
+      "description": "单例生命周期审计: 析构函数 + 资源释放完整性",
+      "detail": "审计所有 singleton 的析构函数: CameraDriver(~) / SdCard(~) / DisplayDriver(~) / AudioIO(~) / ChatEngine(~) / WifiManager(~)。每个析构是否释放了 Initialize() 中分配的所有资源？是否存在'初始化了一半但析构不知道哪些已分配'的问题？输出审计报告。",
+      "affected_files": [
+        "main/camera_driver.cpp",
+        "main/sd_card.cpp",
+        "main/display_driver.cpp",
+        "main/audio_io.cpp",
+        "main/chat_engine.cpp",
+        "main/wifi_manager.cpp"
+      ],
+      "validation": {
+        "manual": "输出审计报告，标注每个析构的资源释放完整性",
+        "ci_jobs": [],
+        "auto_accept": false
+      },
+      "depends_on": [],
+      "retries": 0
+    },
+
+    {
+      "id": "HM-PRE-01",
+      "agent": "hermes",
+      "model": "DS-v4-pro",
+      "priority": "P0",
+      "status": "ready",
+      "category": "knowledge",
+      "description": "构建 Graphify 知识图谱 (从 Claude Code 会话内运行 /graphify .)",
+      "detail": "在 Claude Code 会话中运行 /graphify . 完成语义提取（需要 API 访问）。生成后验证 graph.json、graph.html、GRAPH_REPORT.md 三个输出。",
+      "validation": {
+        "manual": "graphify-out/graph.json 存在且包含 >100 nodes",
+        "ci_jobs": [],
+        "auto_accept": true
+      },
+      "depends_on": [],
+      "retries": 0
+    },
+    {
+      "id": "HM-PRE-02",
+      "agent": "hermes",
+      "model": "DS-v4-pro",
+      "priority": "P1",
+      "status": "ready",
+      "category": "knowledge",
+      "description": "捕获 v0.0.1→v0.0.9 开发历程到跨会话记忆",
+      "detail": "从 version_roadmap.md 和 5 个 Agent MD 文件中提取关键决策和教训，写入 Hermes 跨会话记忆: (1) 为什么 Codex 从备选升级为高级开发者; (2) Graphify 安装注意事项(UTF-16 BOM 问题); (3) 42 个 #ifndef CONFIG_* 后备宏的来源; (4) 触摸驱动双协议设计决策。",
+      "validation": {
+        "manual": "Hermes 记忆文件中有 4+ 条本项目相关记忆",
+        "ci_jobs": [],
+        "auto_accept": true
+      },
+      "depends_on": [],
+      "retries": 0
+    },
+    {
+      "id": "HM-PRE-03",
+      "agent": "hermes",
+      "model": "DS-v4-pro",
+      "priority": "P2",
+      "status": "ready",
+      "category": "knowledge",
+      "description": "创建 'RoboMind Automated Loop' 技能",
+      "detail": "基于 .planning/tasks.json 的工作流，创建一个可复用的技能: 读取 tasks.json → 按优先级排序 → 对 ready 任务生成 Agent 提示词 → 等待结果 → 运行验证 → 更新状态。技能应可在板子到货后的 v0.1.x 版本直接使用。",
+      "validation": {
+        "manual": "技能文件存在于 .claude/skills/ 或 Hermes 技能库",
+        "ci_jobs": [],
+        "auto_accept": false
+      },
+      "depends_on": [],
+      "retries": 0
+    }
+  ],
+
+  "completed_tasks": [
+    "CX-v0.0.7-01", "CX-v0.0.7-02", "CX-v0.0.7-03", "CX-v0.0.7-04", "CX-v0.0.7-05",
+    "CX-v0.0.8-01", "CX-v0.0.8-02", "CX-v0.0.8-03", "CX-v0.0.8-04", "CX-v0.0.8-05",
+    "CX-v0.0.8-06", "CX-v0.0.8-07", "CX-v0.0.8-08"
+  ],
+
+  "agent_registry": {
+    "codex": {
+      "role": "高级资深开发者",
+      "model": "GPT-5.5",
+      "guide": "CODEX.md",
+      "worktree": true,
+      "max_concurrent": 1,
+      "categories": ["implementation"]
+    },
+    "codewhale": {
+      "role": "日常开发者",
+      "model": "DS-v4-pro",
+      "guide": "CODEWHALE.md",
+      "worktree": true,
+      "max_concurrent": 1,
+      "categories": ["quality", "fix", "exploration"]
+    },
+    "reasonix": {
+      "role": "调试专家",
+      "model": "DS-v4-pro",
+      "guide": "REASONIX.md",
+      "worktree": true,
+      "max_concurrent": 1,
+      "categories": ["audit", "debug", "analysis"]
+    },
+    "hermes": {
+      "role": "知识策展人",
+      "model": "DS-v4-pro",
+      "guide": "HERMES.md",
+      "worktree": false,
+      "max_concurrent": 1,
+      "categories": ["knowledge", "automation", "skill"]
+    }
+  },
+
+  "auto_routing": {
+    "_comment": "确定性路由规则，零 LLM 调用。任务前缀决定 Agent。",
+    "CX-*": "codex",
+    "CW-*": "codewhale",
+    "RX-*": "reasonix",
+    "HM-*": "hermes"
+  }
+}
