@@ -1,0 +1,387 @@
+# RoboMind-S3 Kconfig Project Build Configuration
+# These options appear in `idf.py menuconfig` under "RoboMind S3 Configuration"
+
+menu "RoboMind S3 Configuration"
+
+    menu "WiFi"
+        config ROBOMIND_WIFI_SSID
+            string "WiFi SSID"
+            default "MyWiFi"
+            help
+                WiFi network SSID to connect to.
+
+        config ROBOMIND_WIFI_PASSWORD
+            string "WiFi Password"
+            default "password"
+            help
+                WiFi network password.
+
+        config ROBOMIND_WIFI_MAX_RETRY
+            int "WiFi max retry attempts"
+            default 5
+            range 1 20
+            help
+                Maximum WiFi connection retry attempts before giving up.
+    endmenu
+
+    menu "AI API"
+        config ROBOMIND_AI_API_ENDPOINT
+            string "AI API Endpoint URL"
+            default "https://api.openai.com/v1/chat/completions"
+            help
+                LLM chat completions API endpoint.
+                Supports OpenAI-compatible APIs (Claude via Anthropic proxy, Ollama, etc.).
+
+        config ROBOMIND_AI_API_KEY
+            string "AI API Key"
+            default ""
+            help
+                API key for authentication.
+                For production, consider storing in NVS instead of compile-time config.
+
+        config ROBOMIND_AI_MODEL_NAME
+            string "AI Model Name"
+            default "gpt-4o-mini"
+            help
+                Model name to pass in the API request.
+                Examples: gpt-4o-mini, claude-haiku-4-5, llama3, mistral.
+
+        config ROBOMIND_AI_SYSTEM_PROMPT
+            string "System Prompt"
+            default "你是一个车载机器人助手，名字叫 RoboMind。请用简洁友好的方式回答问题。"
+            help
+                System-level prompt that defines the assistant's persona.
+
+        config ROBOMIND_AI_MAX_TOKENS
+            int "Max Response Tokens"
+            default 1024
+            range 64 4096
+            help
+                Maximum tokens in the AI response.
+
+        config ROBOMIND_AI_TEMPERATURE
+            int "Temperature (x100)"
+            default 70
+            range 0 200
+            help
+                AI response temperature in hundredths (70 = 0.7).
+                0 = deterministic, 200 = max creativity.
+                Stored as integer to avoid floating-point Kconfig limitations.
+
+        config ROBOMIND_CHAT_HISTORY_MAX
+            int "Chat History Max Messages"
+            default 20
+            range 4 100
+            help
+                Maximum number of chat messages kept in context window.
+    endmenu
+
+    menu "Display"
+        choice ROBOMIND_DISPLAY_DRIVER
+            prompt "Display Driver"
+            default ROBOMIND_DISPLAY_ILI9341
+            help
+                Select the LCD/TFT display driver chip.
+
+            config ROBOMIND_DISPLAY_ILI9341
+                bool "ILI9341 (SPI, 240x320)"
+                help
+                    Select this for ILI9341-based 2.4 inch SPI TFT panels.
+            config ROBOMIND_DISPLAY_ST7789
+                bool "ST7789 (SPI, 240x320)"
+                help
+                    Select this for ST7789-based SPI TFT panels.
+            config ROBOMIND_DISPLAY_ST7796
+                bool "ST7796 (SPI, 320x480)"
+                help
+                    Select this for ST7796-based 320x480 SPI TFT panels.
+            config ROBOMIND_DISPLAY_GC9A01
+                bool "GC9A01 (SPI, 240x240 Round)"
+                help
+                    Select this for GC9A01-based round SPI TFT panels.
+        endchoice
+
+        config ROBOMIND_DISPLAY_WIDTH
+            int "Display Width"
+            default 240
+            range 128 800
+            help
+                Display horizontal resolution in pixels.
+
+        config ROBOMIND_DISPLAY_HEIGHT
+            int "Display Height"
+            default 320
+            range 128 480
+            help
+                Display vertical resolution in pixels.
+
+        config ROBOMIND_DISPLAY_ROTATION
+            int "Display Rotation"
+            default 0
+            range 0 3
+            help
+                Display rotation: 0=0°, 1=90°, 2=180°, 3=270°
+
+        config ROBOMIND_DISPLAY_BACKLIGHT
+            bool "Enable Backlight Control"
+            default y
+            help
+                Enable PWM backlight brightness control.
+
+        menu "Display Pin Mapping (SPI)"
+            config ROBOMIND_DISPLAY_SPI_HOST
+                int "SPI Host"
+                default 2
+                range 1 3
+                help
+                    SPI peripheral: SPI2_HOST=1, SPI3_HOST=2.
+
+            config ROBOMIND_DISPLAY_PIN_MOSI
+                int "MOSI Pin"
+                default 11
+                range 0 48
+                help
+                    GPIO used for SPI MOSI output from ESP32-S3 to the display.
+
+            config ROBOMIND_DISPLAY_PIN_MISO
+                int "MISO Pin"
+                default 13
+                range -1 48
+                help
+                    Set to -1 if display has no MISO (write-only).
+
+            config ROBOMIND_DISPLAY_PIN_CLK
+                int "SCLK Pin"
+                default 12
+                range 0 48
+                help
+                    GPIO used for SPI clock output from ESP32-S3 to the display.
+
+            config ROBOMIND_DISPLAY_PIN_CS
+                int "CS Pin"
+                default 10
+                range 0 48
+                help
+                    GPIO used for display SPI chip select output.
+
+            config ROBOMIND_DISPLAY_PIN_DC
+                int "DC (Data/Command) Pin"
+                default 14
+                range 0 48
+                help
+                    GPIO used to select LCD command or data mode.
+
+            config ROBOMIND_DISPLAY_PIN_RST
+                int "RST Pin"
+                default 9
+                range -1 48
+                help
+                    Set to -1 if connected to EN (hardware reset).
+
+            config ROBOMIND_DISPLAY_PIN_BL
+                int "Backlight Pin"
+                default 8
+                range -1 48
+                help
+                    PWM-capable GPIO for backlight. Set to -1 if not used.
+        endmenu
+
+        menu "Touch Panel"
+            config ROBOMIND_TOUCH_ENABLE
+                bool "Enable Touch Panel"
+                default y
+                help
+                    Enable resistive or capacitive touch panel.
+
+            choice ROBOMIND_TOUCH_DRIVER
+                prompt "Touch Driver"
+                default ROBOMIND_TOUCH_XPT2046
+                depends on ROBOMIND_TOUCH_ENABLE
+
+                config ROBOMIND_TOUCH_XPT2046
+                    bool "XPT2046 (Resistive, SPI)"
+                    help
+                        Select this for resistive touch panels using XPT2046 over SPI.
+                config ROBOMIND_TOUCH_FT6X06
+                    bool "FT6x06 (Capacitive, I2C)"
+                    help
+                        Select this for capacitive touch panels using FT6x06 over I2C.
+            endchoice
+
+            config ROBOMIND_TOUCH_SPI_HOST
+                int "Touch SPI Host"
+                default 2
+                range 1 3
+                depends on ROBOMIND_TOUCH_XPT2046
+                help
+                    SPI peripheral used by the XPT2046 touch controller.
+
+            config ROBOMIND_TOUCH_PIN_CS
+                int "Touch CS Pin"
+                default 15
+                range 0 48
+                depends on ROBOMIND_TOUCH_XPT2046
+                help
+                    GPIO used for XPT2046 SPI chip select output.
+
+            config ROBOMIND_TOUCH_PIN_IRQ
+                int "Touch IRQ Pin (Pen Interrupt)"
+                default 13
+                range -1 48
+                depends on ROBOMIND_TOUCH_XPT2046
+                help
+                    XPT2046 PENIRQ pin. Set to -1 to poll instead of interrupt.
+
+            config ROBOMIND_TOUCH_I2C_SDA
+                int "Touch I2C SDA Pin"
+                default 17
+                range 0 48
+                depends on ROBOMIND_TOUCH_FT6X06
+                help
+                    GPIO used for FT6x06 I2C SDA.
+
+            config ROBOMIND_TOUCH_I2C_SCL
+                int "Touch I2C SCL Pin"
+                default 18
+                range 0 48
+                depends on ROBOMIND_TOUCH_FT6X06
+                help
+                    GPIO used for FT6x06 I2C SCL.
+
+            config ROBOMIND_TOUCH_I2C_ADDR
+                hex "Touch I2C Address"
+                default 0x38
+                depends on ROBOMIND_TOUCH_FT6X06
+                help
+                    I2C address used by the FT6x06 touch controller.
+        endmenu
+    endmenu
+
+    menu "Audio (Experimental)"
+        config ROBOMIND_ENABLE_AUDIO
+            bool "Enable I2S Audio"
+            default n
+            help
+                Enable I2S microphone input and speaker output for voice interaction.
+                Requires INMP441 mic + MAX98357 amp (or equivalent).
+
+        config ROBOMIND_AUDIO_I2S_BCK
+            int "I2S BCK Pin"
+            default 4
+            range 0 48
+            depends on ROBOMIND_ENABLE_AUDIO
+            help
+                GPIO used for I2S bit clock output.
+
+        config ROBOMIND_AUDIO_I2S_WS
+            int "I2S WS (LRCLK) Pin"
+            default 5
+            range 0 48
+            depends on ROBOMIND_ENABLE_AUDIO
+            help
+                GPIO used for I2S word select or LRCLK output.
+
+        config ROBOMIND_AUDIO_I2S_DIN
+            int "I2S DIN (Mic Data) Pin"
+            default 6
+            range 0 48
+            depends on ROBOMIND_ENABLE_AUDIO
+            help
+                GPIO used for I2S microphone data input.
+
+        config ROBOMIND_AUDIO_I2S_DOUT
+            int "I2S DOUT (Speaker Data) Pin"
+            default 7
+            range 0 48
+            depends on ROBOMIND_ENABLE_AUDIO
+            help
+                GPIO used for I2S speaker data output.
+
+        config ROBOMIND_AUDIO_SAMPLE_RATE
+            int "Audio Sample Rate (Hz)"
+            default 16000
+            range 8000 48000
+            depends on ROBOMIND_ENABLE_AUDIO
+            help
+                I2S sample rate for both capture and playback.
+
+        config ROBOMIND_AUDIO_BUFFER_MS
+            int "Audio Buffer Size (ms)"
+            default 100
+            range 50 500
+            depends on ROBOMIND_ENABLE_AUDIO
+            help
+                DMA buffer size in milliseconds. Larger means less CPU and more latency.
+    endmenu
+
+    menu "Camera (OV5640)"
+        config ROBOMIND_CAMERA_PIN_SCL
+            int "OV5640 SCL Pin (SCCB I2C)"
+            default 17
+            range 0 48
+            help
+                OV5640 SCCB/I2C clock pin. Connect to OV5640 SCL.
+
+        config ROBOMIND_CAMERA_PIN_SDA
+            int "OV5640 SDA Pin (SCCB I2C)"
+            default 18
+            range 0 48
+            help
+                OV5640 SCCB/I2C data pin. Connect to OV5640 SDA.
+    endmenu
+
+    menu "SD Card (TF Card)"
+        config ROBOMIND_SD_MODE
+            int "SD Card Interface Mode (0=SPI, 1=SDMMC)"
+            default 0
+            range 0 1
+            help
+                SPI mode uses 4 pins (CS/MOSI/MISO/CLK).
+                SDMMC mode uses 6 pins (CLK/CMD/D0/D1/D2/D3).
+
+        config ROBOMIND_SD_PIN_CS
+            int "SD Card CS Pin (SPI mode)"
+            default 21
+            range 0 48
+            help
+                SD card chip select pin for SPI mode.
+
+        config ROBOMIND_SD_PIN_MOSI
+            int "SD Card MOSI Pin (SPI mode)"
+            default 11
+            range 0 48
+            help
+                SD card MOSI pin for SPI mode.
+
+        config ROBOMIND_SD_PIN_MISO
+            int "SD Card MISO Pin (SPI mode)"
+            default 13
+            range 0 48
+            help
+                SD card MISO pin for SPI mode.
+
+        config ROBOMIND_SD_PIN_CLK
+            int "SD Card CLK Pin (SPI mode)"
+            default 12
+            range 0 48
+            help
+                SD card clock pin for SPI mode.
+    endmenu
+
+    menu "Advance"
+        config ROBOMIND_USE_SERIAL_INPUT
+            bool "Enable Serial Terminal Input"
+            default y
+            help
+                Accept chat input via UART serial terminal as a fallback input method.
+                Send messages to ESP32-S3 via serial monitor.
+
+        config ROBOMIND_HTTP_TIMEOUT_MS
+            int "HTTP Request Timeout (ms)"
+            default 30000
+            range 5000 120000
+            help
+                Timeout for HTTP requests to the AI API.
+    endmenu
+
+endmenu

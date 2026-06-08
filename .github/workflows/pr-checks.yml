@@ -1,0 +1,153 @@
+﻿name: PR Checks
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  clang-format:
+    name: clang-format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+      - name: Check C++ formatting
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find main -maxdepth 1 \( -name '*.cpp' -o -name '*.h' \) | sort)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No C++ files found under main/"
+            exit 0
+          fi
+          clang-format --style=LLVM --dry-run --Werror "${files[@]}"
+
+  cppcheck:
+    name: cppcheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install cppcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+      - name: Run static analysis
+        run: |
+          set -euo pipefail
+          cppcheck --enable=all --std=c++17 --inline-suppr \
+            --suppress=missingIncludeSystem --error-exitcode=1 main/
+
+  kconfig-check:
+    name: kconfig-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate project Kconfig
+        run: |
+          set -euo pipefail
+          kconfig_file="main/Kconfig.projbuild"
+          defaults_file="sdkconfig.defaults"
+          status=0
+
+          while IFS=: read -r line symbol; do
+            name="${symbol#CONFIG_}"
+            if [[ "$name" == ROBOMIND_* ]] && ! grep -Eq "^[[:space:]]*config[[:space:]]+$name([[:space:]]|$)" "$kconfig_file"; then
+              echo "$defaults_file:$line: error: $symbol is not defined in $kconfig_file"
+              status=1
+            fi
+          done < <(grep -nE '^CONFIG_[A-Za-z0-9_]+=' "$defaults_file" | sed -E 's/:([^=]+)=.*/:\1/')
+
+          awk -v file="$kconfig_file" '
+            /^[[:space:]]*config[[:space:]]+[A-Za-z0-9_]+/ {
+              if (name != "" && has_help == 0) {
+                printf "%s:%d: error: config %s is missing help text\n", file, line, name;
+                status = 1;
+              }
+              name = $2;
+              line = FNR;
+              has_help = 0;
+            }
+            /^[[:space:]]*help[[:space:]]*$/ {
+              if (name != "") {
+                has_help = 1;
+              }
+            }
+            END {
+              if (name != "" && has_help == 0) {
+                printf "%s:%d: error: config %s is missing help text\n", file, line, name;
+                status = 1;
+              }
+              exit status;
+            }
+          ' "$kconfig_file" || status=1
+
+          exit "$status"
+
+  md-version-check:
+    name: md-version-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate markdown version markers
+        run: |
+          set -euo pipefail
+          files=(CLAUDE.md CODEX.md README.md docs/version_roadmap.md)
+          status=0
+          current_version=$(grep -E '^\| v[0-9]+\.[0-9]+\.[0-9]+ \| 20[0-9-]+ \|' docs/version_roadmap.md \
+            | sed -E 's/^\| (v[0-9]+\.[0-9]+\.[0-9]+) .*/\1/' | tail -n 1)
+          if [ -z "$current_version" ]; then
+            echo "docs/version_roadmap.md:1: error: unable to find current version marker"
+            exit 1
+          fi
+
+          for file in "${files[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "$file:1: error: required markdown file is missing"
+              status=1
+              continue
+            fi
+            if ! grep -q 'version_roadmap.md' "$file"; then
+              echo "$file:1: error: file must reference docs/version_roadmap.md"
+              status=1
+            fi
+            if ! grep -q "$current_version" "$file"; then
+              echo "$file:1: error: current version $current_version is not mentioned"
+              status=1
+            fi
+          done
+          exit "$status"
+
+  guardrail-check:
+    name: guardrail-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate guardrail references
+        run: |
+          set -euo pipefail
+          status=0
+          if [ ! -f GUARDRAILS.md ]; then
+            echo "GUARDRAILS.md:1: error: guardrail document is missing"
+            status=1
+          fi
+          for file in CLAUDE.md CODEWHALE.md REASONIX.md CODEX.md; do
+            if [ ! -f "$file" ]; then
+              echo "$file:1: error: required agent guide is missing"
+              status=1
+              continue
+            fi
+            if ! grep -n 'GUARDRAILS.md' "$file" >/dev/null; then
+              echo "$file:1: error: missing reference to GUARDRAILS.md"
+              status=1
+            fi
+          done
+          exit "$status"
+
+
