@@ -1,0 +1,23 @@
+# Graphify — generated knowledge graph (rebuild locally)
+graphify-out/
+
+# ESP-IDF build artifacts
+build/
+sdkconfig
+*.pyc
+__pycache__/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ESP32 firmware binaries (generated)
+*.bin
+*.elf
+*.map
