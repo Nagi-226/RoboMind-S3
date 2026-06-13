@@ -14,7 +14,7 @@ This file provides guidance to **Claude Code** when working with code in this re
 ---
 
 ## 🎯 Claude Code 职责定位
-> Current version: v0.0.9 ✅ (pre-board phase 100% complete). Board expected tomorrow.
+> Current version: v0.1.4 ✅ (display working). WiFi + AI chat bring-up in progress.
 
 ```
 你是 Architect，管理一个 3 人实现团队。
@@ -296,6 +296,51 @@ main.cpp (app_main)
 ### Advanced
 - `ROBOMIND_USE_SERIAL_INPUT` — 串口终端输入 (调试 fallback)
 - `ROBOMIND_HTTP_TIMEOUT_MS` — API 超时 (default: 30s)
+
+---
+
+## v0.1.4 Display Bring-Up Lessons (from Codex CX-9)
+
+> Key fixes that got ST7789 working on ATK-DNESP32S3. Apply these patterns to future HW bring-up.
+
+### 1. SPI Host Selection
+- ATK-DNESP32S3 PCB routes LCD SPI to **SPI2_HOST (1)**, not SPI3_HOST (2)
+- Always verify against reference code (78/xiaozhi-esp32 `atk-dnesp32s3/config.h`)
+
+### 2. Use esp_lcd_panel_st7789, Not Manual Commands
+- ESP-IDF's built-in `esp_lcd_panel_st7789` handles the full ST7789 init sequence
+- Manual command writes are error-prone (DC timing, wrong register sequence, missing steps)
+- Pattern: `spi_bus_initialize → esp_lcd_new_panel_io_spi → esp_lcd_new_panel_st7789 → esp_lcd_panel_init`
+
+### 3. SPI Host Type Cast in C++
+- `esp_lcd_new_panel_io_spi()` takes `esp_lcd_spi_bus_handle_t` (void*), NOT `int`
+- `static_cast<int → void*>` fails; use `reinterpret_cast<esp_lcd_spi_bus_handle_t>(static_cast<intptr_t>(host))`
+- Codex implemented `ToLcdSpiBusHandle()` helper
+
+### 4. XL9555 IO Expander
+- Backlight and LCD reset controlled via XL9555 (I2C: SDA=41, SCL=42, addr=0x20)
+- Config: Port0=0x03, Port1=0xF0 (bits 2-11 as outputs per reference)
+- Pin 8 (IO1_0) = LCD backlight, Pin 2 (IO0_2) = LCD reset
+- Must configure XL9555 BEFORE initializing SPI/ST7789
+
+### 5. LVGL RGB565 Byte Swap
+- ST7789 on this board expects swapped RGB565 bytes (BGR565 wiring)
+- Set `CONFIG_LV_COLOR_16_SWAP=y` in sdkconfig + `Rgb565ToPanelEndian()` in flush callback
+- Without this, colors appear wrong (R↔B swap)
+
+### 6. Build Script Discipline
+- `build_flash.cmd` must STOP on build errors (not continue to flash old firmware)
+- Use `--no-ccache` to avoid stale object cache issues on Windows
+- Pattern: `setlocal`, check `errorlevel` after each step
+
+### 7. Touch is Optional
+- XPT2046/Ft6x06 touch init failure should NOT abort display initialization
+- Display works without touch — make touch init non-fatal (`ESP_LOGW`, don't `return false`)
+
+### 8. Proving SPI Before LVGL
+- `RunSolidColorSelfTest()` — fill screen with R/G/B before LVGL starts
+- If colors appear → SPI+ST7789 OK, focus on LVGL buffers/flush
+- If no colors → focus on SPI pins, CS/DC, XL9555 reset/backlight
 
 ---
 

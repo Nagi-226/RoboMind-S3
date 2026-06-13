@@ -13,6 +13,7 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_rom_sys.h"
 #include "esp_system.h"
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -32,6 +33,9 @@ static const char* TAG = "robo_main";
 
 extern "C" void app_main(void)
 {
+    esp_rom_printf("\n[CX-9] app_main start: USB-Serial-JTAG console probe\n");
+    ESP_LOGI(TAG, "app_main start (CX-9 display debug)");
+
     // --- 1. NVS 初始化 ---
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -58,6 +62,7 @@ extern "C" void app_main(void)
         esp_restart();
     }
     ui->ShowSplashScreen("RoboMind-S3", "WiFi connecting...");
+    lv_timer_handler();  // Flush the first LVGL frame before WiFi blocks.
 
     // --- 4. WiFi 连接 (屏幕亮后再联网) ---
     auto* wifi = WifiManager::GetInstance();
@@ -100,6 +105,12 @@ extern "C" void app_main(void)
 #endif
 
 #if CONFIG_ROBOMIND_SD_PIN_CS
+#if CONFIG_ROBOMIND_SD_MODE == 0 && \
+    (CONFIG_ROBOMIND_SD_PIN_CS == CONFIG_ROBOMIND_DISPLAY_PIN_CS || \
+     CONFIG_ROBOMIND_SD_PIN_MOSI == CONFIG_ROBOMIND_DISPLAY_PIN_MOSI || \
+     CONFIG_ROBOMIND_SD_PIN_CLK == CONFIG_ROBOMIND_DISPLAY_PIN_CLK)
+    ESP_LOGW(TAG, "Skipping SD auto-mount: SD SPI pins conflict with LCD during CX-9 display bring-up");
+#else
     {
         auto* sd = SdCard::GetInstance();
         if (sd->Mount()) {
@@ -108,6 +119,7 @@ extern "C" void app_main(void)
             ESP_LOGW(TAG, "SD card mount failed; expected if no card inserted");
         }
     }
+#endif
 #endif
 
 #if CONFIG_ROBOMIND_ENABLE_AUDIO
