@@ -1,0 +1,4 @@
+## ESP-IDF Component Manager manifest for RoboMind-S3
+dependencies:
+  lvgl/lvgl: ">=8.3.0,<9"
+  ## Note: json is provided by ESP-IDF framework, no external dependency needed

@@ -104,6 +104,53 @@ idf.py fullclean
 
 ---
 
+## Current Progress (v0.1.4 — 🔴 BLOCKED)
+
+> Updated: 2026-06-13
+
+| Version | Status | Summary |
+|---------|--------|---------|
+| v0.1.0 | ✅ | Board photos archived, components confirmed |
+| v0.1.1 | ✅ | GPIO pins confirmed from xiaozhi-esp32 reference |
+| v0.1.2 | ✅ | Kconfig defaults updated (ST7789 320x240, GPIO pins) |
+| v0.1.3 | ✅ | First build + flash successful (ESP-IDF v5.2.7, 1.15MB) |
+| v0.1.4 | 🔴 BLOCKED | Display backlight ON but no LVGL rendering |
+
+### Known Issues (v0.1.4)
+
+1. **Display not rendering**: ST7789 SPI display backlight works (XL9555 I2C init OK) but no content drawn. SPI at 20MHz, MISO=NC. Possible causes:
+   - ST7789 init sequence incomplete for this panel variant
+   - ESP32-S3 SPI pins need specific configuration
+   - LVGL buffer allocation failing silently
+   - MADCTL register wrong (0x60 for MV|MX, should be verified)
+   
+2. **Serial output missing after boot**: Bootloader logs show, but app logs (ESP_LOGI) don't appear on COM3 USB-Serial-JTAG. May need `esp_vfs_dev_uart_use_driver` or USB CDC init.
+
+3. **WiFi configured but untested**: SSID=Nagi_226 (2.4GHz), DeepSeek API key set.
+
+### Hardware Context
+
+- Board: ATK-DNESP32S3 (正点原子 "小智AI" 套件)
+- MCU: ESP32-S3-WROOM-1-N16R8
+- Display: ST7789 320x240 SPI, controlled via XL9555 I2C IO expander
+- Display SPI pins: MOSI=11, SCLK=12, CS=21, DC=40
+- XL9555 I2C: SDA=41, SCL=42, addr=0x20
+- Reference firmware: 78/xiaozhi-esp32 (atk-dnesp32s3 board config)
+
+### Current Build Config
+
+```
+Display: ST7789 320x240, SPI2_HOST
+LCD: MOSI=11 SCLK=12 MISO=-1 CS=21 DC=40 RST=-1 BL=-1
+Touch: XPT2046 (unverified pins)
+Camera: SCCB=38/39 (DVP pins confirmed, not tested)
+Audio: I2S via ES8388 (not enabled)
+WiFi: Nagi_226 (2.4GHz)
+API: DeepSeek deepseek-chat
+```
+
+---
+
 ## Source Tree
 
 ```
@@ -428,3 +475,87 @@ ESP-IDF uses Kconfig for compile-time configuration, not `#ifdef` blocks:
 ### 🟡 v0.2.3-0.2.4 — TF 卡 + 集成
 - [ ] v0.2.3: TF 卡挂载 + 文件读写
 - [ ] v0.2.4: 🎯 #photo 命令 → 拍照 → 存卡 → 预览
+
+---
+
+## 🔴 CX-9: v0.1.4 Display Debug — ST7789 not rendering (P0)
+
+### Assigned: Codex (GPT-5.5) | Priority: P0 | Status: 🔴 BLOCKED
+
+### Context
+
+Board is ATK-DNESP32S3 (正点原子 ESP32-S3 "小智AI" 套件). Firmware builds and flashes OK (ESP-IDF v5.2.7). 
+
+**Symptom**: XL9555 IO expander backlight turns ON (screen glows), but no LVGL content is visible. Screen stays uniformly black/glowing. No app-level serial logs appear on COM3 USB-Serial-JTAG (bootloader logs DO appear).
+
+**What works**: Bootloader, PSRAM (8MB Octal @ 80MHz), Flash (16MB), XL9555 I2C (backlight control).
+
+### Root Cause Investigation Scope
+
+You need to determine WHY the ST7789 SPI display is not rendering. Investigate these hypotheses:
+
+1. **SPI bus init fails silently** → Check if `spi_bus_initialize(SPI2_HOST, ...)` returns ESP_OK. Add ESP_ERROR_CHECK or explicit error logging.
+
+2. **ST7789 init sequence incomplete** → The current init is minimal: SW reset → sleep out → MADCTL(0x60) → pixel format(0x55) → display on. Some panels need color inversion (0x21), VCOM, gamma, or porch settings. Compare against `esp_lcd_panel_st7789` in ESP-IDF which does a complete init.
+
+3. **MADCTL wrong for this panel** → Current MADCTL=0x60 (MV|MX, no BGR). Reference xiaozhi-esp32 uses SWAP_XY=true, MIRROR_X=true, MIRROR_Y=false. Try 0x68 (MV|MX|BGR) and 0x60.
+
+4. **PSRAM buffer allocation fails** → LVGL draw buffers allocated via `heap_caps_malloc(..., MALLOC_CAP_SPIRAM)`. Add error check — if PSRAM alloc fails, try internal RAM fallback.
+
+5. **Serial output blocked** → Add `esp_vfs_dev_uart_use_driver(CONFIG_ESP_CONSOLE_UART_NUM)` at start of app_main, or use `ets_printf()` for early debug output.
+
+6. **SPI pin conflict** → GPIO 13 was used for MISO (now set to NC). Check if any other pin conflicts exist.
+
+### Files to Investigate
+
+| File | What to Check |
+|------|---------------|
+| `main/display_driver.cpp:InitSpiBus()` | SPI bus init return value |
+| `main/display_driver.cpp:InitLcdController()` | ST7789 init command sequence |
+| `main/display_driver.cpp:Initialize()` | LVGL buffer alloc, display driver registration |
+| `main/main.cpp:app_main()` | Init order: NVS → Display → UI → WiFi |
+| `main/Kconfig.projbuild` | SPI pin defaults (line 131-187) |
+| `sdkconfig.defaults` | MISO=-1, SPI clock |
+
+### Reference
+
+- Working ST7789 init for this board: [78/xiaozhi-esp32 atk-dnesp32s3 config](https://github.com/78/xiaozhi-esp32/blob/main/main/boards/atk-dnesp32s3/config.h)
+- ESP-IDF ST7789 panel driver: `components/esp_lcd/src/esp_lcd_panel_st7789.c`
+- Hardware spec with confirmed GPIOs: `docs/hardware_spec.md`
+
+### Acceptance Criteria
+
+- [ ] SPI bus init returns ESP_OK (confirm via serial log)
+- [ ] ST7789 init each step returns true (add per-step logging)
+- [ ] LVGL draw buffers allocated successfully
+- [ ] At minimum: solid color fill visible on screen (prove SPI works)
+- [ ] App-level ESP_LOGI messages visible on COM3 serial monitor
+
+### Build & Flash
+
+```bash
+# From project root, double-click:
+build_flash.cmd
+
+# Or manually:
+D:\Espressif\idf_cmd_init.bat
+idf.py set-target esp32s3
+idf.py build
+idf.py -p COM3 flash monitor
+```
+
+### Key Config
+
+```
+CONFIG_ROBOMIND_DISPLAY_ST7789=y
+CONFIG_ROBOMIND_DISPLAY_WIDTH=320
+CONFIG_ROBOMIND_DISPLAY_HEIGHT=240
+CONFIG_ROBOMIND_DISPLAY_PIN_MOSI=11
+CONFIG_ROBOMIND_DISPLAY_PIN_CLK=12
+CONFIG_ROBOMIND_DISPLAY_PIN_MISO=-1
+CONFIG_ROBOMIND_DISPLAY_PIN_CS=21
+CONFIG_ROBOMIND_DISPLAY_PIN_DC=40
+CONFIG_ROBOMIND_DISPLAY_PIN_RST=-1
+CONFIG_ROBOMIND_DISPLAY_PIN_BL=-1
+CONFIG_ROBOMIND_DISPLAY_SPI_HOST=2
+```

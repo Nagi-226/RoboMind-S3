@@ -45,10 +45,27 @@ extern "C" void app_main(void)
     }
     ESP_LOGI(TAG, "NVS initialized OK");
 
-    // --- 2. WiFi 连接 ---
+    // --- 2. 显示屏 + LVGL 初始化 (先亮屏!) ---
+    if (!DisplayDriver::GetInstance()->Initialize()) {
+        ESP_LOGE(TAG, "Display init failed, restarting...");
+        esp_restart();
+    }
+
+    // --- 3. 聊天 UI 初始化 (先显示界面) ---
+    auto* ui = ChatUI::GetInstance();
+    if (!ui->Initialize()) {
+        ESP_LOGE(TAG, "ChatUI init failed, restarting...");
+        esp_restart();
+    }
+    ui->ShowSplashScreen("RoboMind-S3", "WiFi connecting...");
+
+    // --- 4. WiFi 连接 (屏幕亮后再联网) ---
     auto* wifi = WifiManager::GetInstance();
-    if (!wifi->Connect()) {
-        ESP_LOGE(TAG, "WiFi connection failed, restarting...");
+    bool wifi_ok = wifi->Connect();
+    if (!wifi_ok) {
+        ESP_LOGW(TAG, "WiFi connection failed, continuing offline");
+        ui->ShowSplashScreen("RoboMind-S3", "WiFi offline - check SSID");
+        // Reset failure counter on fresh boot
         nvs_handle_t handle;
         if (nvs_open("system", NVS_READWRITE, &handle) == ESP_OK) {
             uint32_t restart_count = 0;
@@ -57,29 +74,10 @@ extern "C" void app_main(void)
             nvs_set_u32(handle, "wifi_fail_count", restart_count);
             nvs_commit(handle);
             nvs_close(handle);
-
-            if (restart_count > 5) {
-                ESP_LOGE(TAG, "WiFi failed %lu times, halting...",
-                         static_cast<unsigned long>(restart_count));
-                vTaskDelay(pdMS_TO_TICKS(60000));
-            }
         }
-        esp_restart();
-    }
-    ESP_LOGI(TAG, "WiFi connected, IP: %s", wifi->GetIpAddress().c_str());
-
-    // --- 3. 显示屏 + LVGL 初始化 ---
-    if (!DisplayDriver::GetInstance()->Initialize()) {
-        ESP_LOGE(TAG, "Display init failed, disconnecting WiFi before restart...");
-        wifi->Disconnect();
-        esp_restart();
-    }
-
-    // --- 4. 聊天 UI 初始化 ---
-    auto* ui = ChatUI::GetInstance();
-    if (!ui->Initialize()) {
-        ESP_LOGE(TAG, "ChatUI init failed, restarting...");
-        esp_restart();
+        // Don't restart — keep showing splash with error message
+    } else {
+        ESP_LOGI(TAG, "WiFi connected, IP: %s", wifi->GetIpAddress().c_str());
     }
 
     // --- 5. 聊天引擎启动 ---
@@ -136,8 +134,10 @@ extern "C" void app_main(void)
         ChatUI::GetInstance()->SetStatus(status, info);
     });
 
-    // --- 6. 显示启动画面 ---
-    ui->ShowSplashScreen("RoboMind-S3", "AI Chatbot Ready");
+    // --- 6. 更新状态 ---
+    if (wifi_ok) {
+        ui->ShowSplashScreen("RoboMind-S3", "AI Chatbot Ready");
+    }
 
     // --- 7. 主循环委托给 LVGL Task ---
     // LVGL timer task 每 5ms 触发一次 lv_timer_handler()

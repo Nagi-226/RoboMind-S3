@@ -185,6 +185,7 @@ static bool ReadXpt2046Touch(int16_t* x, int16_t* y) {
     return true;
 }
 
+#if CONFIG_ROBOMIND_TOUCH_FT6X06
 static bool InitFt6x06() {
     if (s_ft6x06_initialized) {
         return true;
@@ -258,6 +259,7 @@ static bool ReadFt6x06Touch(int16_t* x, int16_t* y) {
     ApplyTouchRotation(x, y);
     return true;
 }
+#endif  // CONFIG_ROBOMIND_TOUCH_FT6X06
 }  // namespace
 
 DisplayDriver* DisplayDriver::GetInstance() {
@@ -290,11 +292,58 @@ DisplayDriver::~DisplayDriver() {
     if (buf2_) { heap_caps_free(buf2_); buf2_ = nullptr; }
 }
 
+// XL9555 IO expander helpers (I2C addr 0x20, shared with ES8388 on GPIO 41/42)
+static bool g_xl9555_ok = false;
+
+static bool Xl9555WriteReg(uint8_t reg, uint8_t val) {
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (0x20 << 1) | I2C_MASTER_WRITE, true);
+    i2c_master_write_byte(cmd, reg, true);
+    i2c_master_write_byte(cmd, val, true);
+    i2c_master_stop(cmd);
+    esp_err_t ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, pdMS_TO_TICKS(100));
+    i2c_cmd_link_delete(cmd);
+    return ret == ESP_OK;
+}
+
+static bool InitXl9555() {
+    if (g_xl9555_ok) return true;
+
+    i2c_config_t conf = {};
+    conf.mode = I2C_MODE_MASTER;
+    conf.sda_io_num = GPIO_NUM_41;
+    conf.scl_io_num = GPIO_NUM_42;
+    conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
+    conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
+    conf.master.clk_speed = 100000;
+    ESP_ERROR_CHECK(i2c_param_config(I2C_NUM_0, &conf));
+    ESP_ERROR_CHECK(i2c_driver_install(I2C_NUM_0, I2C_MODE_MASTER, 0, 0, 0));
+
+    // Config Port1: bits 2,3 = outputs (0), others = inputs (1)
+    // Port0: all inputs (0xFF) — camera PWDN/RESET on bits 4,5
+    Xl9555WriteReg(0x07, 0xF3);
+    Xl9555WriteReg(0x06, 0xFF);
+    // Port1 output: bit2=LCD_RST high, bit3=BL high → 0x0C
+    Xl9555WriteReg(0x03, 0x0C);
+
+    ESP_LOGI(TAG, "XL9555 OK: backlight ON");
+    g_xl9555_ok = true;
+    return true;
+}
+
 bool DisplayDriver::Initialize() {
     display_width_ = CONFIG_ROBOMIND_DISPLAY_WIDTH;
     display_height_ = CONFIG_ROBOMIND_DISPLAY_HEIGHT;
 
     ESP_LOGI(TAG, "Initializing display %dx%d", display_width_, display_height_);
+
+    // --- 0. XL9555 IO expander (backlight + reset) ---
+    if (CONFIG_ROBOMIND_DISPLAY_PIN_BL < 0) {
+        if (!InitXl9555()) {
+            ESP_LOGW(TAG, "XL9555 init failed, display may stay dark");
+        }
+    }
 
     // --- 1. 背光 PWM ---
     if (CONFIG_ROBOMIND_DISPLAY_PIN_BL >= 0) {
@@ -700,7 +749,7 @@ void DisplayDriver::LvglFlushCallback(lv_disp_drv_t* /*disp*/,
     t6.tx_buffer = color_p;
     spi_device_transmit(s_spi_device, &t6);
 
-    lv_disp_flush_ready(self->display_);
+    lv_disp_flush_ready(self->display_->driver);
 }
 
 void DisplayDriver::LvglTouchCallback(lv_indev_drv_t* /*indev*/,

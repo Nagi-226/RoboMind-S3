@@ -11,8 +11,9 @@
 #include <cJSON.h>
 
 
-#include "esp_crt_bundle.h"
 #include "esp_http_client.h"
+
+extern "C" esp_err_t esp_crt_bundle_attach(void* conf);
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"

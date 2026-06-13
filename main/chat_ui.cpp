@@ -99,7 +99,7 @@ void ChatUI::ShowSplashScreen(const std::string& title, const std::string& subti
     lv_obj_t* title_label = lv_label_create(splash);
     lv_label_set_text(title_label, title.c_str());
     lv_obj_set_style_text_color(title_label, COLOR_TEXT_WHITE, LV_PART_MAIN);
-    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_24, LV_PART_MAIN);
+    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_obj_align(title_label, LV_ALIGN_CENTER, 0, -20);
 
     lv_obj_t* subtitle_label = lv_label_create(splash);
@@ -130,7 +130,7 @@ void ChatUI::CreateTitleBar() {
     lv_obj_t* label = lv_label_create(title_bar_);
     lv_label_set_text(label, "RoboMind AI");
     lv_obj_set_style_text_color(label, COLOR_TEXT_WHITE, LV_PART_MAIN);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_16, LV_PART_MAIN);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_obj_center(label);
 }
 
@@ -145,7 +145,7 @@ void ChatUI::CreateStatusBar() {
     status_label_ = lv_label_create(status_bar_);
     lv_label_set_text(status_label_, "Ready");
     lv_obj_set_style_text_color(status_label_, COLOR_TEXT_DIM, LV_PART_MAIN);
-    lv_obj_set_style_text_font(status_label_, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_font(status_label_, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_obj_center(status_label_);
 }
 
@@ -197,7 +197,7 @@ void ChatUI::CreateInputArea() {
     lv_obj_set_style_radius(send_btn_, 6, LV_PART_MAIN);
 
     lv_obj_t* btn_label = lv_label_create(send_btn_);
-    lv_label_set_text(btn_label, LV_SYMBOL_SEND);
+    lv_label_set_text(btn_label, LV_SYMBOL_OK);
     lv_obj_set_style_text_color(btn_label, COLOR_TEXT_WHITE, LV_PART_MAIN);
     lv_obj_center(btn_label);
 
@@ -277,7 +277,7 @@ lv_obj_t* ChatUI::AddMessageBubble(const std::string& role, const std::string& c
     const char* role_text = is_user ? "You" : "AI";
     lv_label_set_text(role_label, role_text);
     lv_obj_set_style_text_color(role_label, lv_color_hex(0x888888), LV_PART_MAIN);
-    lv_obj_set_style_text_font(role_label, &lv_font_montserrat_10, LV_PART_MAIN);
+    lv_obj_set_style_text_font(role_label, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_obj_align(role_label, LV_ALIGN_TOP_LEFT, 0, 0);
 
     lv_obj_t* content_label = lv_label_create(container);

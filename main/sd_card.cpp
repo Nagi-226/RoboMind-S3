@@ -3,7 +3,8 @@
 #include <cstdio>
 #include <cstring>
 #include <dirent.h>
-#include <sys/statvfs.h>
+#include <sys/stat.h>
+#include "esp_vfs_fat.h"
 
 #include "driver/gpio.h"
 #include "driver/sdmmc_host.h"
@@ -246,13 +247,15 @@ uint64_t SdCard::GetFreeSpaceMB() {
         return 0;
     }
 
-    statvfs stat = {};
-    if (statvfs(mount_point_.c_str(), &stat) != 0) {
-        ESP_LOGE(TAG, "statvfs failed: %s", mount_point_.c_str());
+    FATFS* fs = nullptr;
+    DWORD free_clusters = 0;
+    FRESULT res = f_getfree("0:", &free_clusters, &fs);
+    if (res != FR_OK || !fs) {
+        ESP_LOGE(TAG, "f_getfree failed: %d", static_cast<int>(res));
         return 0;
     }
 
-    const uint64_t bytes = static_cast<uint64_t>(stat.f_bavail) * stat.f_frsize;
+    uint64_t bytes = static_cast<uint64_t>(free_clusters) * fs->csize * FF_SS_SDCARD;
     return bytes / (1024ULL * 1024ULL);
 }
 

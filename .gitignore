@@ -25,3 +25,5 @@ Thumbs.db
 *.bin
 *.elf
 *.map
+managed_components/
+build/

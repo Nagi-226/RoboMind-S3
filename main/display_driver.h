@@ -70,7 +70,7 @@ private:
     int display_width_{240};
     int display_height_{320};
 
-    static constexpr int kSpiClockHz = 40 * 1000 * 1000;  // 40MHz SPI
+    static constexpr int kSpiClockHz = 20 * 1000 * 1000;  // 20MHz SPI
     static constexpr int kLvglTaskStackSize = 8192;
     static constexpr int kTickIntervalMs = 5;
 };

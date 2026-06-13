@@ -41,6 +41,7 @@ int s_tx_sample_rate = 0;
 bool s_rx_enabled = false;
 bool s_tx_enabled = false;
 
+#if CONFIG_ROBOMIND_ENABLE_AUDIO
 size_t CalculateBufferSamples(int sample_rate, int buffer_ms) {
     const int safe_ms = std::max(buffer_ms, 1);
     const int safe_rate = std::max(sample_rate, 1);
@@ -65,6 +66,7 @@ i2s_std_config_t MakeStdConfig(int sample_rate, gpio_num_t bck, gpio_num_t ws,
     config.gpio_cfg.invert_flags.ws_inv = false;
     return config;
 }
+#endif
 }
 
 AudioIO* AudioIO::GetInstance() {
@@ -245,6 +247,7 @@ void AudioIO::CaptureTask(void* arg) {
 }
 
 void AudioIO::CaptureLoop() {
+#if CONFIG_ROBOMIND_ENABLE_AUDIO
     size_t buffer_index = 0;
     while (true) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -270,9 +273,14 @@ void AudioIO::CaptureLoop() {
             buffer_index = (buffer_index + 1) % kCaptureBufferCount;
         }
     }
+#endif
 }
 
 bool AudioIO::InitTxChannel(int sample_rate) {
+#if !CONFIG_ROBOMIND_ENABLE_AUDIO
+    ESP_LOGE(TAG, "Audio not enabled in Kconfig");
+    return false;
+#else
     if (s_tx_channel && s_tx_sample_rate == sample_rate) {
         return true;
     }
@@ -333,9 +341,14 @@ bool AudioIO::InitTxChannel(int sample_rate) {
     s_tx_enabled = true;
     s_tx_sample_rate = sample_rate;
     return true;
+#endif
 }
 
 bool AudioIO::AllocateCaptureBuffers() {
+#if !CONFIG_ROBOMIND_ENABLE_AUDIO
+    ESP_LOGE(TAG, "Audio not enabled in Kconfig");
+    return false;
+#else
     s_capture_buffer_samples = CalculateBufferSamples(CONFIG_ROBOMIND_AUDIO_SAMPLE_RATE,
                                                        CONFIG_ROBOMIND_AUDIO_BUFFER_MS);
     const size_t buffer_bytes = s_capture_buffer_samples * sizeof(int16_t);
@@ -352,6 +365,7 @@ bool AudioIO::AllocateCaptureBuffers() {
         std::memset(s_capture_buffers[i], 0, buffer_bytes);
     }
     return true;
+#endif
 }
 
 void AudioIO::ReleaseAudioResources() {
