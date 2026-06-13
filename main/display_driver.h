@@ -11,7 +11,7 @@
  *
  * 支持的驱动芯片 (通过 Kconfig 选择):
  *   - ILI9341 (SPI, 240×320)
- *   - ST7789  (SPI, 240×320)
+ *   - ST7789  (SPI, 320×240, ATK-DNESP32S3 default)
  *   - ST7796  (SPI, 320×480)
  *   - GC9A01  (SPI, 240×240 Round)
  */

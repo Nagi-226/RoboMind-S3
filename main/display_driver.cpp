@@ -530,6 +530,8 @@ bool DisplayDriver::InitLcdController() {
     vTaskDelay(pdMS_TO_TICKS(20));
 
 #elif DISPLAY_DRIVER_ST7789
+    // ATK-DNESP32S3: 320x240 panel, SWAP_XY=true, MIRROR_X=true, MIRROR_Y=false
+    // ST7789 MADCTL bits: MY(7) MX(6) MV(5) ML(4) BGR(3) MH(2)
     if (!LcdWriteCommand(0x01)) return false;  // SW reset
     vTaskDelay(pdMS_TO_TICKS(150));
 
@@ -538,14 +540,19 @@ bool DisplayDriver::InitLcdController() {
 
     if (!LcdWriteCommand(0x36)) return false;  // MADCTL
 #if CONFIG_ROBOMIND_DISPLAY_ROTATION == 0
-    if (!LcdWriteData(0x48)) return false;  // Portrait: MX | BGR
+    // Default: MV=1 (swap XY) | MX=1 (mirror X) → 320x240 landscape
+    if (!LcdWriteData(0x60)) return false;
 #elif CONFIG_ROBOMIND_DISPLAY_ROTATION == 1
-    if (!LcdWriteData(0x88)) return false;  // Landscape: MV | MX | BGR
+    // MV=1 | MX=1 | MY=1 → upsidedown landscape
+    if (!LcdWriteData(0xE0)) return false;
 #elif CONFIG_ROBOMIND_DISPLAY_ROTATION == 2
-    if (!LcdWriteData(0x28)) return false;  // Portrait inverted: MY | BGR
+    // MV=0 | MX=0 | MY=0 → 240x320 portrait
+    if (!LcdWriteData(0x00)) return false;
 #else
-    if (!LcdWriteData(0xE8)) return false;  // Landscape inverted: MV | MX | MY | BGR
+    // MV=0 | MX=0 | MY=1 → inverted portrait
+    if (!LcdWriteData(0x80)) return false;
 #endif
+    // Note: add BGR bit (0x08) if colors appear wrong (R↔B swap)
 
     if (!LcdWriteCommand(0x3A)) return false;  // Pixel format
     if (!LcdWriteData(0x55)) return false;     // 16bpp

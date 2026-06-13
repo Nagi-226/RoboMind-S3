@@ -79,7 +79,7 @@ menu "RoboMind S3 Configuration"
     menu "Display"
         choice ROBOMIND_DISPLAY_DRIVER
             prompt "Display Driver"
-            default ROBOMIND_DISPLAY_ILI9341
+            default ROBOMIND_DISPLAY_ST7789
             help
                 Select the LCD/TFT display driver chip.
 
@@ -103,14 +103,14 @@ menu "RoboMind S3 Configuration"
 
         config ROBOMIND_DISPLAY_WIDTH
             int "Display Width"
-            default 240
+            default 320
             range 128 800
             help
                 Display horizontal resolution in pixels.
 
         config ROBOMIND_DISPLAY_HEIGHT
             int "Display Height"
-            default 320
+            default 240
             range 128 480
             help
                 Display vertical resolution in pixels.
@@ -159,31 +159,31 @@ menu "RoboMind S3 Configuration"
 
             config ROBOMIND_DISPLAY_PIN_CS
                 int "CS Pin"
-                default 10
+                default 21
                 range 0 48
                 help
                     GPIO used for display SPI chip select output.
 
             config ROBOMIND_DISPLAY_PIN_DC
                 int "DC (Data/Command) Pin"
-                default 14
+                default 40
                 range 0 48
                 help
                     GPIO used to select LCD command or data mode.
 
             config ROBOMIND_DISPLAY_PIN_RST
                 int "RST Pin"
-                default 9
+                default -1
                 range -1 48
                 help
-                    Set to -1 if connected to EN (hardware reset).
+                    Set to -1 if connected to EN (hardware reset) or XL9555 IO expander.
 
             config ROBOMIND_DISPLAY_PIN_BL
                 int "Backlight Pin"
-                default 8
+                default -1
                 range -1 48
                 help
-                    PWM-capable GPIO for backlight. Set to -1 if not used.
+                    PWM-capable GPIO for backlight. Set to -1 if controlled via XL9555 IO expander.
         endmenu
 
         menu "Touch Panel"
@@ -262,20 +262,21 @@ menu "RoboMind S3 Configuration"
             bool "Enable I2S Audio"
             default n
             help
-                Enable I2S microphone input and speaker output for voice interaction.
-                Requires INMP441 mic + MAX98357 amp (or equivalent).
+                Enable I2S audio input and output for voice interaction.
+                ATK-DNESP32S3 uses ES8388 codec (I2C addr 0x10) on I2C bus shared with XL9555.
+                I2S pins below are for the ESP32-S3 ↔ ES8388 audio data interface.
 
-        config ROBOMIND_AUDIO_I2S_BCK
-            int "I2S BCK Pin"
-            default 4
-            range 0 48
+        config ROBOMIND_AUDIO_I2S_MCLK
+            int "I2S MCLK Pin"
+            default 3
+            range -1 48
             depends on ROBOMIND_ENABLE_AUDIO
             help
-                GPIO used for I2S bit clock output.
+                GPIO used for I2S master clock output. Required for ES8388 codec.
 
         config ROBOMIND_AUDIO_I2S_WS
             int "I2S WS (LRCLK) Pin"
-            default 5
+            default 9
             range 0 48
             depends on ROBOMIND_ENABLE_AUDIO
             help
@@ -283,7 +284,7 @@ menu "RoboMind S3 Configuration"
 
         config ROBOMIND_AUDIO_I2S_DIN
             int "I2S DIN (Mic Data) Pin"
-            default 6
+            default 14
             range 0 48
             depends on ROBOMIND_ENABLE_AUDIO
             help
@@ -291,7 +292,7 @@ menu "RoboMind S3 Configuration"
 
         config ROBOMIND_AUDIO_I2S_DOUT
             int "I2S DOUT (Speaker Data) Pin"
-            default 7
+            default 10
             range 0 48
             depends on ROBOMIND_ENABLE_AUDIO
             help
@@ -317,14 +318,14 @@ menu "RoboMind S3 Configuration"
     menu "Camera (OV5640)"
         config ROBOMIND_CAMERA_PIN_SCL
             int "OV5640 SCL Pin (SCCB I2C)"
-            default 17
+            default 38
             range 0 48
             help
                 OV5640 SCCB/I2C clock pin. Connect to OV5640 SCL.
 
         config ROBOMIND_CAMERA_PIN_SDA
             int "OV5640 SDA Pin (SCCB I2C)"
-            default 18
+            default 39
             range 0 48
             help
                 OV5640 SCCB/I2C data pin. Connect to OV5640 SDA.
