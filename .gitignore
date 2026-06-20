@@ -8,6 +8,7 @@ graphify-out/
 # ESP-IDF build artifacts
 build/
 sdkconfig
+sdkconfig.old
 *.pyc
 __pycache__/
 
