@@ -104,19 +104,20 @@ extern "C" void app_main(void)
         ESP_LOGI(TAG, "WiFi connected, IP: %s", wifi->GetIpAddress().c_str());
     }
 
-    // --- 5. 聊天引擎启动 ---
-    auto* engine = ChatEngine::GetInstance();
-    if (!engine->Initialize()) {
-        ESP_LOGE(TAG, "ChatEngine init failed");
-        esp_restart();
-    }
-
     // --- 5.5. Optional module initialization ---
     /* 旧的 CameraDriver::Initialize 会在已经装好的 I2C0 上再配一次脚，
      * 背光用的 XL9555 会跟着失效。这一单只走 esp_camera_init。 */
     {
         const esp_err_t cam = camera_budget_init();
         ESP_LOGI(TAG, "esp_camera_init -> %s", esp_err_to_name(cam));
+    }
+    log_mem("after_camera_early");
+
+    // --- 5. 聊天引擎启动 ---
+    auto* engine = ChatEngine::GetInstance();
+    if (!engine->Initialize()) {
+        ESP_LOGE(TAG, "ChatEngine init failed");
+        esp_restart();
     }
     log_mem("after_camera_init");
 
