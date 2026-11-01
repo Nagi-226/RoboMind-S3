@@ -12,25 +12,41 @@
  */
 
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_rom_sys.h"
 #include "esp_system.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "sdkconfig.h"
 
+#include <cstdio>
+
 #include "wifi_manager.h"
+#include "camera_budget.h"
 #include "display_driver.h"
 #include "chat_ui.h"
 #include "chat_engine.h"
-#include "camera_driver.h"
 #include "sd_card.h"
 #include "audio_io.h"
 #include "system_monitor.h"
 #include "ppm_bridge.h"
 
 static const char* TAG = "robo_main";
+
+static void log_mem(const char* tag)
+{
+    const uint32_t internal = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    std::printf("[mem] %s  free=%lu  largest=%lu  min_free=%lu  psram_free=%lu\n",
+                tag,
+                static_cast<unsigned long>(heap_caps_get_free_size(internal)),
+                static_cast<unsigned long>(heap_caps_get_largest_free_block(internal)),
+                static_cast<unsigned long>(heap_caps_get_minimum_free_size(internal)),
+                static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+    std::fflush(stdout);
+}
 
 extern "C" void app_main(void)
 {
@@ -67,7 +83,9 @@ extern "C" void app_main(void)
 
     // --- 4. WiFi 连接 (屏幕亮后再联网) ---
     auto* wifi = WifiManager::GetInstance();
+    log_mem("before_wifi");
     bool wifi_ok = wifi->Connect();
+    log_mem("after_wifi");
     if (!wifi_ok) {
         ESP_LOGW(TAG, "WiFi connection failed, continuing offline");
         ui->ShowSplashScreen("RoboMind-S3", "WiFi offline - check SSID");
@@ -94,16 +112,13 @@ extern "C" void app_main(void)
     }
 
     // --- 5.5. Optional module initialization ---
-#if CONFIG_ROBOMIND_CAMERA_PIN_SCL
+    /* 旧的 CameraDriver::Initialize 会在已经装好的 I2C0 上再配一次脚，
+     * 背光用的 XL9555 会跟着失效。这一单只走 esp_camera_init。 */
     {
-        auto* camera = CameraDriver::GetInstance();
-        if (camera->Initialize()) {
-            ESP_LOGI(TAG, "Camera driver initialized OK");
-        } else {
-            ESP_LOGW(TAG, "Camera init failed; expected if no OV5640 attached");
-        }
+        const esp_err_t cam = camera_budget_init();
+        ESP_LOGI(TAG, "esp_camera_init -> %s", esp_err_to_name(cam));
     }
-#endif
+    log_mem("after_camera_init");
 
 #if CONFIG_ROBOMIND_SD_PIN_CS
 #if CONFIG_ROBOMIND_SD_MODE == 0 && \
@@ -151,6 +166,11 @@ extern "C" void app_main(void)
     if (wifi_ok) {
         ui->ShowSplashScreen("RoboMind-S3", "AI Chatbot Ready");
     }
+
+    /* 必须真发一次。失败没关系，要的是 TLS 内容缓冲有没有被分配。 */
+    engine->SendMessage("ping");
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    log_mem("after_chat");
 
     // --- 7. 主循环委托给 LVGL Task ---
     // LVGL timer task 每 5ms 触发一次 lv_timer_handler()

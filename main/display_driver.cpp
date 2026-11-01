@@ -146,6 +146,20 @@ DisplayDriver::~DisplayDriver() {
     if (buf2_) heap_caps_free(buf2_);
 }
 
+bool DisplayDriver::EnsureXl9555() {
+    return InitXl9555();
+}
+
+bool DisplayDriver::SetCameraPins(bool pwdn_high, bool reset_high) {
+    if (!EnsureXl9555()) {
+        return false;
+    }
+    /* port0 bit4 = pin 4，bit5 = pin 5。方向寄存器已是输出，只改电平。 */
+    const bool pwdn_ok = SetXl9555Output(4, pwdn_high);
+    const bool reset_ok = SetXl9555Output(5, reset_high);
+    return pwdn_ok && reset_ok;
+}
+
 bool DisplayDriver::InitXl9555() {
     if (g_xl9555_ok) return true;
 

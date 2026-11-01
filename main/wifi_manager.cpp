@@ -148,7 +148,15 @@ bool WifiManager::Connect() {
         return false;
     }
 
-    ESP_LOGI(TAG, "WiFi connecting to SSID: %s", CONFIG_ROBOMIND_WIFI_SSID);
+    /* 只留前两个字符。完整 SSID 不进串口。 */
+    const char* ssid = CONFIG_ROBOMIND_WIFI_SSID;
+    const size_t ssid_len = std::strlen(ssid);
+    const size_t keep = (ssid_len >= 2) ? 2 : ssid_len;
+    char shown[3] = {'\0', '\0', '\0'};
+    if (keep > 0) {
+        std::memcpy(shown, ssid, keep);
+    }
+    ESP_LOGI(TAG, "WiFi connecting to SSID: %s***", shown);
 
     EventBits_t bits = xEventGroupWaitBits(
         s_wifi_event_group,

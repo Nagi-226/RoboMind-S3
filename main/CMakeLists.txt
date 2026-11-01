@@ -16,6 +16,7 @@ idf_component_register(
         "chat_ui.cpp"
         "audio_io.cpp"
         "camera_driver.cpp"
+        "camera_budget.cpp"
         "sd_card.cpp"
         "system_monitor.cpp"
     INCLUDE_DIRS
@@ -30,6 +31,7 @@ idf_component_register(
         lvgl
         json
         ppm
+        esp32-camera
     PRIV_REQUIRES
         driver
         esp_timer
