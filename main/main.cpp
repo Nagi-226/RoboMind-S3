@@ -37,6 +37,7 @@
 #include "sd_card.h"
 #include "audio_io.h"
 #include "system_monitor.h"
+#include "ppm_bridge.h"
 
 static const char* TAG = "robo_main";
 
@@ -87,6 +88,9 @@ static void warm_frames(int round)
 }
 
 static volatile uint32_t g_lv_fires = 0;
+
+/* 取地址，不调用。否则链接器会把 PPM 的静态池裁掉，堆基线就不是 R3f 那一档。 */
+static void *volatile g_ppm_keep = reinterpret_cast<void *>(&ppm_bridge_start);
 
 static void lv_probe_cb(lv_timer_t* t)
 {
@@ -220,6 +224,10 @@ extern "C" void app_main(void)
 
     /* 门控循环取代启动时那一次 ping。不调用 ppm_bridge_start：
      * 取帧循环还在跑的时候把摄像头退掉，是 use-after-free 的胚胎。 */
+    if (g_ppm_keep == nullptr) {
+        std::printf("[gate] ppm anchor missing\n");
+        std::fflush(stdout);
+    }
     std::printf("[gate] state=%s\n", rg_state_name(rg_camera_state()));
     std::fflush(stdout);
     log_mem("gate_cam_on");
