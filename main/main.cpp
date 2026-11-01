@@ -25,6 +25,7 @@
 #include "sdkconfig.h"
 
 #include <cstdio>
+#include <cstring>
 
 #include "lvgl.h"
 
@@ -50,6 +51,73 @@ static void log_mem(const char* tag)
                 static_cast<unsigned long>(heap_caps_get_minimum_free_size(internal)),
                 static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
     std::fflush(stdout);
+}
+
+struct frame_stats {
+    unsigned min_v;
+    unsigned max_v;
+    unsigned distinct;
+    unsigned long mean;
+    unsigned long checksum;
+};
+
+frame_stats analyze(const uint8_t *buf, size_t len)
+{
+    unsigned hist[256];
+    frame_stats s;
+    size_t i;
+    unsigned v;
+
+    std::memset(hist, 0, sizeof(hist));
+    s.min_v = 255u;
+    s.max_v = 0u;
+    s.distinct = 0u;
+    s.checksum = 0u;
+
+    for (i = 0; i < len; i++) {
+        hist[buf[i]]++;
+        if (buf[i] < s.min_v) { s.min_v = buf[i]; }
+        if (buf[i] > s.max_v) { s.max_v = buf[i]; }
+        s.checksum += buf[i];
+    }
+    for (v = 0; v < 256u; v++) {
+        if (hist[v] != 0u) { s.distinct++; }
+    }
+    s.mean = (len == 0u) ? 0u : (s.checksum / static_cast<unsigned long>(len));
+    if (len == 0u) { s.min_v = 0u; }
+    return s;
+}
+
+static void grab_group(const char *name)
+{
+    for (int i = 0; i < 5; ++i) {
+        camera_fb_t *fb = esp_camera_fb_get();
+        if (fb == nullptr) {
+            std::printf("[cam] %-7s f%d fb_get null\n", name, i);
+            std::fflush(stdout);
+            continue;
+        }
+        const frame_stats s = analyze(fb->buf, fb->len);
+        std::printf("[cam] %-7s f%d len=%u min=%u max=%u distinct=%u mean=%lu sum=0x%08lx\n",
+                    name, i,
+                    static_cast<unsigned>(fb->len),
+                    s.min_v, s.max_v, s.distinct, s.mean,
+                    s.checksum);
+        std::fflush(stdout);
+        esp_camera_fb_return(fb);
+    }
+}
+
+/* 组间隔必须不少于 1 秒，AE 才来得及动。这里留 12 秒，屏上给出遮挡提示。 */
+static void pause_group(ChatUI *ui, const char *splash, int seconds)
+{
+    std::printf("[cam] pause %ds %s\n", seconds, splash);
+    std::fflush(stdout);
+    ui->ShowSplashScreen("R3h", splash);
+    for (int i = 0; i < seconds; ++i) {
+        lv_timer_handler();
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
 }
 
 static volatile uint32_t g_lv_fires = 0;
@@ -210,21 +278,22 @@ extern "C" void app_main(void)
     log_mem("after_chat");
 
     {
-        camera_fb_t* fb = esp_camera_fb_get();
-        if (fb == nullptr) {
-            std::printf("[cam] fb=null\n");
+        sensor_t *s = esp_camera_sensor_get();
+        if (s != nullptr) {
+            std::printf("[sensor] aec=%d agc=%d gainceiling=%d quality=%d\n",
+                        s->status.aec, s->status.agc,
+                        s->status.gainceiling, s->status.quality);
         } else {
-            const char* fmt = (fb->format == PIXFORMAT_GRAYSCALE) ? "GRAYSCALE" : "OTHER";
-            std::printf("[cam] fb len=%u width=%u height=%u format=%d %s\n",
-                        static_cast<unsigned>(fb->len),
-                        static_cast<unsigned>(fb->width),
-                        static_cast<unsigned>(fb->height),
-                        static_cast<int>(fb->format),
-                        fmt);
-            esp_camera_fb_return(fb);
+            std::printf("[sensor] null\n");
         }
         std::fflush(stdout);
     }
+
+    grab_group("normal");
+    pause_group(ui, "COVER LENS", 12);
+    grab_group("covered");
+    pause_group(ui, "UNCOVER LENS", 12);
+    grab_group("normal2");
 
     // --- 7. 主循环委托给 LVGL Task ---
     // LVGL timer task 每 5ms 触发一次 lv_timer_handler()
