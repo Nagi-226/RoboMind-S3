@@ -1,3 +1,4 @@
+/* A 路线（mbedtls 进 PSRAM）之后门控不再需要；保留是因为 deinit 能还 36,012 已被 R3e 实测，未来做省电模式可能用得上。 */
 #pragma once
 
 #include "esp_err.h"
