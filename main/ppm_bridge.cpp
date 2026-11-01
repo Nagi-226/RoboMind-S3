@@ -26,10 +26,20 @@
 #include "ppm_mock.h"
 #include "ppm_profile_generated.h"
 
+/* 只在 lv_timer_handler() 里递增。创建放在 ppm_bridge_start()，
+ * 那时主循环还没开始，不会和 lv_timer_handler 抢链表。 */
+static volatile uint32_t g_lv_fires = 0;
+
+static void lv_probe_cb(lv_timer_t *t)
+{
+    (void)t;
+    g_lv_fires += 1;
+}
+
 namespace {
 
 constexpr int      kFrames       = 100;
-constexpr int      kPeriodMs     = 66;
+constexpr int      kPeriodMs     = 70;   /* 7 tick @ 100 Hz。66 会截成 6 tick = 60 ms */
 constexpr int      kFailStop     = 10;
 constexpr size_t   kFrameBytes   = 76800;
 constexpr unsigned kStackBytes   = 6144;
@@ -160,9 +170,6 @@ void ppm_task(void *)
 
     paint_ramp(pixels, width, height, stride);
 
-    const uint32_t lvgl_ticks_at_start = lv_tick_get();
-    const uint64_t ts_origin = static_cast<uint64_t>(esp_timer_get_time() / 1000);
-
     int ok = 0;
     int fail = 0;
     int streak = 0;
@@ -176,6 +183,11 @@ void ppm_task(void *)
     int cost_n = 0;
     uint8_t seen_mark = 0;
     int last_col = 0;
+    uint64_t first_ts = 0;
+    uint64_t last_ts = 0;
+    int64_t first_real_us = 0;
+    int64_t last_real_us = 0;
+    uint32_t fires_at_first = 0;
 
     TickType_t last_wake = xTaskGetTickCount();
     const TickType_t period = pdMS_TO_TICKS(kPeriodMs);
@@ -194,8 +206,16 @@ void ppm_task(void *)
         frame.height = static_cast<uint16_t>(height);
         frame.stride = static_cast<uint16_t>(stride);
         frame.pixfmt = ctx->cfg.frame.pixfmt;
-        frame.ts_ms  = ts_origin + static_cast<uint64_t>(seq) * static_cast<uint64_t>(kPeriodMs);
+        const int64_t stamp_us = esp_timer_get_time();
+        frame.ts_ms  = static_cast<uint64_t>(stamp_us / 1000);
         frame.seq    = static_cast<uint32_t>(seq);
+        if (seq == 0) {
+            first_ts = frame.ts_ms;
+            first_real_us = stamp_us;
+            fires_at_first = g_lv_fires;
+        }
+        last_ts = frame.ts_ms;
+        last_real_us = stamp_us;
 
         /* 缺省脚本：没有脸、没有眼睛。不把像素解释成闭眼。 */
         ppmi_mock_begin_frame(nullptr);
@@ -254,19 +274,35 @@ void ppm_task(void *)
     }
 
     const HeapSample after_100 = sample_heap();
-    const uint32_t lvgl_ticks_now = lv_tick_get();
+    const int64_t ts_span = static_cast<int64_t>(last_ts - first_ts);
+    const int64_t real_span = (last_real_us - first_real_us) / 1000;
+    const int64_t drift = ts_span - real_span;
+    const uint32_t fires = g_lv_fires - fires_at_first;
+    const int64_t expected = (real_span > 0) ? (real_span / 100) : 0;
+    /* xtensa 的 StackType_t 是 uint8_t，返回值已经是字节，不再乘字长。 */
+    const UBaseType_t hw = uxTaskGetStackHighWaterMark(nullptr);
+    const unsigned peak = kStackBytes - static_cast<unsigned>(hw);
+
     std::printf("[ppm ] frame=%d  ok=%d  fail=%d  last_valid=%u  last_level=%u  degrade=0x%08x\n",
                 ran, ok, fail, last_valid, last_level, last_degrade);
+    std::printf("[ppm ] time   ts_span=%lldms  real_span=%lldms  drift=%lldms\n",
+                static_cast<long long>(ts_span),
+                static_cast<long long>(real_span),
+                static_cast<long long>(drift));
     if (cost_n > 0) {
-        std::printf("[ppm ] cost  min=%lldus  avg=%lldus  max=%lldus\n",
+        std::printf("[ppm ] cost   min=%lldus  avg=%lldus  max=%lldus\n",
                     static_cast<long long>(cost_min),
                     static_cast<long long>(cost_sum / cost_n),
                     static_cast<long long>(cost_max));
     }
+    std::printf("[ppm ] stack  high_water=%uB free of %uB  peak=%uB\n",
+                static_cast<unsigned>(hw),
+                kStackBytes,
+                peak);
     print_heap("after_100", after_100);
-    std::printf("[lvgl] alive  ticks=%lu  prev=%lu\n",
-                static_cast<unsigned long>(lvgl_ticks_now),
-                static_cast<unsigned long>(lvgl_ticks_at_start));
+    std::printf("[lvgl] timer_fires=%lu  expected=%lld  period_ms=100\n",
+                static_cast<unsigned long>(fires),
+                static_cast<long long>(expected));
     std::printf("[ppm ] mark col=%d byte_while_set=%u byte_after_restore=%u\n",
                 last_col,
                 static_cast<unsigned>(seen_mark),
@@ -305,6 +341,11 @@ void ppm_task(void *)
 
 void ppm_bridge_start()
 {
+    /* 必须在 RunLvglLoop 之前创建。ppm_task 里创建会和 lv_timer_handler 并发改链表。 */
+    if (lv_timer_create(lv_probe_cb, 100, nullptr) == nullptr) {
+        std::printf("[lvgl] timer create failed\n");
+        std::fflush(stdout);
+    }
     const BaseType_t ok = xTaskCreate(ppm_task, "ppm", kStackBytes, nullptr, kPriority, nullptr);
     if (ok != pdPASS) {
         std::printf("[ppm ] task create failed\n");
