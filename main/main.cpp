@@ -168,9 +168,8 @@ extern "C" void app_main(void)
         ui->ShowSplashScreen("RoboMind-S3", "AI Chatbot Ready");
     }
 
-    /* 必须真发一次。失败没关系，要的是 TLS 内容缓冲有没有被分配。 */
-    engine->SendMessage("ping");
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    /* R3b 不发 HTTP。一次 TLS 尝试会把 min_free 打成回不来的低点，
+     * 任务里就看不到 19,640 扣掉任务栈之后那一档。 */
     log_mem("after_chat");
 
     // --- 7. 主循环委托给 LVGL Task ---

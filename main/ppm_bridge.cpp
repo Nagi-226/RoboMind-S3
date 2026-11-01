@@ -1,9 +1,10 @@
 /*
- * ppm_bridge.cpp — 里程碑 1：在独立任务里跑 100 帧 ppm_run。
+ * ppm_bridge.cpp — 在独立任务里跑 100 帧 ppm_run。
  *
- * 不挂 LVGL 循环，不改显示驱动。帧缓冲只向 PSRAM 要一块，失败就退出任务。
- * 像素是固定灰阶，不往槽里填人脸或闭眼。mock 不读像素，所以这里仍要
- * 交一帧「全部缺省」的脚本，否则模块会把 ppm_run 打成失败。
+ * 测量循环把相机帧缓冲直接交给 ppm_run，不拷贝。esp_camera_fb_return
+ * 放在 ppm_run 之后：还回去的缓冲下一帧就会被 DMA 盖掉。
+ * mock 不读像素，所以仍交「全部缺省」的脚本，否则模块会把 ppm_run 打成失败。
+ * 不往槽里填人脸或闭眼。
  */
 
 #include "ppm_bridge.h"
@@ -15,6 +16,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "esp_camera.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 
@@ -49,6 +51,7 @@ struct HeapSample {
     uint32_t free_bytes;
     uint32_t largest;
     uint32_t min_free;
+    uint32_t psram_free;
 };
 
 HeapSample sample_heap()
@@ -58,43 +61,41 @@ HeapSample sample_heap()
     s.free_bytes = heap_caps_get_free_size(caps);
     s.largest    = heap_caps_get_largest_free_block(caps);
     s.min_free   = heap_caps_get_minimum_free_size(caps);
+    s.psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
     return s;
 }
 
 void print_heap(const char *tag, const HeapSample &s)
 {
-    std::printf("[heap] %s free=%lu  largest=%lu  min_free=%lu\n",
+    std::printf("[heap] %s free=%lu  largest=%lu  min_free=%lu  psram_free=%lu\n",
                 tag,
                 static_cast<unsigned long>(s.free_bytes),
                 static_cast<unsigned long>(s.largest),
-                static_cast<unsigned long>(s.min_free));
+                static_cast<unsigned long>(s.min_free),
+                static_cast<unsigned long>(s.psram_free));
     std::fflush(stdout);
 }
 
-uint8_t ramp_byte(int x)
+uint32_t fnv1a(const uint8_t *p, size_t n)
 {
-    uint32_t v = (static_cast<uint32_t>(x) * 255u) / 239u;
-    if (v > 255u) {
-        v = 255u;
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < n; ++i) {
+        h ^= p[i];
+        h *= 16777619u;
     }
-    return static_cast<uint8_t>(v);
+    return h;
 }
 
-void paint_ramp(uint8_t *pixels, int width, int height, int stride)
+double mean_of(const uint8_t *p, size_t n)
 {
-    for (int y = 0; y < height; ++y) {
-        uint8_t *row = pixels + static_cast<size_t>(y) * static_cast<size_t>(stride);
-        for (int x = 0; x < width; ++x) {
-            row[x] = ramp_byte(x);
-        }
+    uint32_t sum = 0;
+    for (size_t i = 0; i < n; ++i) {
+        sum += p[i];
     }
-}
-
-void paint_column(uint8_t *pixels, int height, int stride, int col, uint8_t value)
-{
-    for (int y = 0; y < height; ++y) {
-        pixels[static_cast<size_t>(y) * static_cast<size_t>(stride) + static_cast<size_t>(col)] = value;
+    if (n == 0) {
+        return 0.0;
     }
+    return static_cast<double>(sum) / static_cast<double>(n);
 }
 
 void ppm_task(void *)
@@ -168,12 +169,27 @@ void ppm_task(void *)
         return;
     }
 
-    paint_ramp(pixels, width, height, stride);
+    /* 前 5 帧是 AE 收敛期，不进入 100 帧统计。均值只打印，不当门限。 */
+    for (int i = 0; i < 5; ++i) {
+        camera_fb_t *w = esp_camera_fb_get();
+        if (w == nullptr) {
+            std::printf("[warm] frame %d get=null\n", i);
+            std::fflush(stdout);
+            continue;
+        }
+        const double mean = mean_of(w->buf, w->len);
+        std::printf("[warm] frame %d mean=%.1f\n", i, mean);
+        std::fflush(stdout);
+        esp_camera_fb_return(w);
+    }
 
     int ok = 0;
     int fail = 0;
     int streak = 0;
     int ran = 0;
+    int null_gets = 0;
+    int sum_bad = 0;
+    int same_bad = 0;
     unsigned last_valid = 0;
     unsigned last_level = 0;
     unsigned last_degrade = 0;
@@ -181,8 +197,6 @@ void ppm_task(void *)
     int64_t cost_max = 0;
     int64_t cost_sum = 0;
     int cost_n = 0;
-    uint8_t seen_mark = 0;
-    int last_col = 0;
     uint64_t first_ts = 0;
     uint64_t last_ts = 0;
     int64_t first_real_us = 0;
@@ -193,23 +207,40 @@ void ppm_task(void *)
     const TickType_t period = pdMS_TO_TICKS(kPeriodMs);
 
     for (int seq = 0; seq < kFrames; ++seq) {
-        const int col = static_cast<int>((static_cast<unsigned>(seq) * 8u) % 240u);
-        last_col = col;
-        paint_column(pixels, height, stride, col, 255);
-        seen_mark = pixels[col];
+        camera_fb_t *fb = esp_camera_fb_get();
+        if (fb == nullptr) {
+            null_gets += 1;
+            std::printf("[ppm ] fb_get null seq=%d\n", seq);
+            std::fflush(stdout);
+            vTaskDelayUntil(&last_wake, period);
+            continue;
+        }
+        if (fb->len != kFrameBytes || fb->width != 320 || fb->height != 240 ||
+            fb->format != PIXFORMAT_GRAYSCALE) {
+            std::printf("[ppm ] fb shape len=%u width=%u height=%u format=%d\n",
+                        static_cast<unsigned>(fb->len),
+                        static_cast<unsigned>(fb->width),
+                        static_cast<unsigned>(fb->height),
+                        static_cast<int>(fb->format));
+            std::fflush(stdout);
+            esp_camera_fb_return(fb);
+            break;
+        }
+
+        const uint32_t sum_in = fnv1a(fb->buf, fb->len);
 
         ppm_frame_t frame;
         std::memset(&frame, 0, sizeof(frame));
-        frame.data   = pixels;
-        frame.size   = kFrameBytes;
-        frame.width  = static_cast<uint16_t>(width);
-        frame.height = static_cast<uint16_t>(height);
-        frame.stride = static_cast<uint16_t>(stride);
+        frame.data   = fb->buf;
+        frame.size   = fb->len;
+        frame.width  = static_cast<uint16_t>(fb->width);
+        frame.height = static_cast<uint16_t>(fb->height);
+        frame.stride = static_cast<uint16_t>(fb->width);
         frame.pixfmt = ctx->cfg.frame.pixfmt;
         const int64_t stamp_us = esp_timer_get_time();
         frame.ts_ms  = static_cast<uint64_t>(stamp_us / 1000);
         frame.seq    = static_cast<uint32_t>(seq);
-        if (seq == 0) {
+        if (cost_n == 0) {
             first_ts = frame.ts_ms;
             first_real_us = stamp_us;
             fires_at_first = g_lv_fires;
@@ -227,7 +258,24 @@ void ppm_task(void *)
         const ppm_status_t run_st = ppm_run(ctx, &frame, &result);
         const int64_t dt = esp_timer_get_time() - t0;
 
-        paint_column(pixels, height, stride, col, ramp_byte(col));
+        const uint32_t sum_out = fnv1a(fb->buf, fb->len);
+        const int same = (frame.data == fb->buf) ? 1 : 0;
+        if (sum_in != sum_out) {
+            sum_bad += 1;
+        }
+        if (same != 1) {
+            same_bad += 1;
+        }
+        std::printf("[ppm ] verify seq=%d sum_in=0x%08lx sum_out=0x%08lx same=%d  cost=%lldus\n",
+                    seq,
+                    static_cast<unsigned long>(sum_in),
+                    static_cast<unsigned long>(sum_out),
+                    same,
+                    static_cast<long long>(dt));
+        std::fflush(stdout);
+
+        /* 还缓冲必须在 ppm_run 和校验和之后。还早了，下一帧 DMA 会盖掉这块。 */
+        esp_camera_fb_return(fb);
 
         if (dt < cost_min) {
             cost_min = dt;
@@ -264,12 +312,6 @@ void ppm_task(void *)
         }
         ran += 1;
 
-        if ((seq + 1) % 10 == 0) {
-            std::printf("[ppm ] seq=%d ok=%d fail=%d dt=%lldus\n",
-                        seq, ok, fail, static_cast<long long>(dt));
-            std::fflush(stdout);
-        }
-
         vTaskDelayUntil(&last_wake, period);
     }
 
@@ -303,10 +345,8 @@ void ppm_task(void *)
     std::printf("[lvgl] timer_fires=%lu  expected=%lld  period_ms=100\n",
                 static_cast<unsigned long>(fires),
                 static_cast<long long>(expected));
-    std::printf("[ppm ] mark col=%d byte_while_set=%u byte_after_restore=%u\n",
-                last_col,
-                static_cast<unsigned>(seen_mark),
-                static_cast<unsigned>(pixels[last_col]));
+    std::printf("[ppm ] verify_bad sum=%d same=%d null=%d\n",
+                sum_bad, same_bad, null_gets);
     std::fflush(stdout);
 
     /* 测量窗口结束以后继续按同一节拍跑，用来和 WiFi/LVGL 并发共存。
