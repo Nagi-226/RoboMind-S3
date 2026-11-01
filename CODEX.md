@@ -140,7 +140,7 @@ LCD: MOSI=11 SCLK=12 MISO=-1 CS=21 DC=40 RST=-1 BL=-1
 Touch: XPT2046 (unverified pins)
 Camera: SCCB=38/39 (DVP pins confirmed, not tested)
 Audio: I2S via ES8388 (not enabled)
-WiFi: Nagi_226 (2.4GHz)
+WiFi: <SSID 见 sdkconfig> (2.4GHz)
 API: DeepSeek deepseek-chat
 ```
 
