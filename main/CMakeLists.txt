@@ -17,6 +17,7 @@ idf_component_register(
         "audio_io.cpp"
         "camera_driver.cpp"
         "camera_budget.cpp"
+        "resource_gate.cpp"
         "sd_card.cpp"
         "system_monitor.cpp"
     INCLUDE_DIRS

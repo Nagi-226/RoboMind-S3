@@ -11,11 +11,13 @@
  *   6. FreeRTOS 双核任务调度
  */
 
+#include "esp_camera.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_rom_sys.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
@@ -24,15 +26,17 @@
 
 #include <cstdio>
 
+#include "lvgl.h"
+
 #include "wifi_manager.h"
 #include "camera_budget.h"
+#include "resource_gate.h"
 #include "display_driver.h"
 #include "chat_ui.h"
 #include "chat_engine.h"
 #include "sd_card.h"
 #include "audio_io.h"
 #include "system_monitor.h"
-#include "ppm_bridge.h"
 
 static const char* TAG = "robo_main";
 
@@ -46,6 +50,52 @@ static void log_mem(const char* tag)
                 static_cast<unsigned long>(heap_caps_get_minimum_free_size(internal)),
                 static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
     std::fflush(stdout);
+}
+
+static const char* rg_state_name(rg_cam_state_t state)
+{
+    return state == RG_CAM_ON ? "CAM_ON" : "CAM_OFF";
+}
+
+static double mean_of(const uint8_t* p, size_t n)
+{
+    uint32_t sum = 0;
+    for (size_t i = 0; i < n; ++i) {
+        sum += p[i];
+    }
+    if (n == 0) {
+        return 0.0;
+    }
+    return static_cast<double>(sum) / static_cast<double>(n);
+}
+
+/* 重新拉起之后的前 5 帧只作废旧统计的证据，不拿灰度当门限。 */
+static void warm_frames(int round)
+{
+    for (int i = 0; i < 5; ++i) {
+        camera_fb_t* w = esp_camera_fb_get();
+        if (w == nullptr) {
+            std::printf("[warm] round %d frame %d get=null\n", round, i);
+            std::fflush(stdout);
+            continue;
+        }
+        const double mean = mean_of(w->buf, w->len);
+        std::printf("[warm] round %d frame %d mean=%.1f\n", round, i, mean);
+        std::fflush(stdout);
+        esp_camera_fb_return(w);
+    }
+}
+
+static volatile uint32_t g_lv_fires = 0;
+
+static void lv_probe_cb(lv_timer_t* t)
+{
+    (void)t;
+    g_lv_fires += 1;
+    if ((g_lv_fires % 10u) == 0u) {
+        std::printf("[lvgl] timer_fires=%lu\n", static_cast<unsigned long>(g_lv_fires));
+        std::fflush(stdout);
+    }
 }
 
 extern "C" void app_main(void)
@@ -168,9 +218,43 @@ extern "C" void app_main(void)
         ui->ShowSplashScreen("RoboMind-S3", "AI Chatbot Ready");
     }
 
-    /* R3b 不发 HTTP。一次 TLS 尝试会把 min_free 打成回不来的低点，
-     * 任务里就看不到 19,640 扣掉任务栈之后那一档。 */
-    log_mem("after_chat");
+    /* 门控循环取代启动时那一次 ping。不调用 ppm_bridge_start：
+     * 取帧循环还在跑的时候把摄像头退掉，是 use-after-free 的胚胎。 */
+    std::printf("[gate] state=%s\n", rg_state_name(rg_camera_state()));
+    std::fflush(stdout);
+    log_mem("gate_cam_on");
+
+    for (int round = 1; round <= 3; ++round) {
+        const esp_err_t rel = rg_release_camera();
+        std::printf("[gate] round %d release -> %s state=%s\n",
+                    round, esp_err_to_name(rel), rg_state_name(rg_camera_state()));
+        std::fflush(stdout);
+        if (rel != ESP_OK) {
+            break;
+        }
+
+        log_mem("gate_released");
+
+        engine->SendMessage("ping");
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        log_mem("gate_chat");
+
+        const int64_t t0 = esp_timer_get_time();
+        const esp_err_t acq = rg_acquire_camera();
+        const double elapsed_s = static_cast<double>(esp_timer_get_time() - t0) / 1000000.0;
+        std::printf("[gate] round %d acquire -> %s state=%s elapsed_s=%.3f\n",
+                    round, esp_err_to_name(acq), rg_state_name(rg_camera_state()), elapsed_s);
+        std::fflush(stdout);
+        if (acq != ESP_OK) {
+            break;
+        }
+
+        log_mem("gate_reacquired");
+        warm_frames(round);
+    }
+
+    std::printf("[gate] state=%s\n", rg_state_name(rg_camera_state()));
+    std::fflush(stdout);
 
     // --- 7. 主循环委托给 LVGL Task ---
     // LVGL timer task 每 5ms 触发一次 lv_timer_handler()
@@ -178,7 +262,11 @@ extern "C" void app_main(void)
     // 用户输入 → ChatEngine::SendMessage() → HTTP → SSE → UI 回调
     ESP_LOGI(TAG, "RoboMind-S3 started successfully");
 
-    ppm_bridge_start();
+    /* 探针只证明 lv_timer_handler 还在走。不启动 PPM 测量任务。 */
+    if (lv_timer_create(lv_probe_cb, 100, nullptr) == nullptr) {
+        std::printf("[lvgl] timer create failed\n");
+        std::fflush(stdout);
+    }
 
     // 运行 LVGL task 循环 (阻塞，永不返回)
     DisplayDriver::GetInstance()->RunLvglLoop();
