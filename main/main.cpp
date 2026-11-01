@@ -28,6 +28,7 @@
 #include "sd_card.h"
 #include "audio_io.h"
 #include "system_monitor.h"
+#include "ppm_bridge.h"
 
 static const char* TAG = "robo_main";
 
@@ -156,6 +157,8 @@ extern "C" void app_main(void)
     // chat_ui 在 LVGL task 中刷新
     // 用户输入 → ChatEngine::SendMessage() → HTTP → SSE → UI 回调
     ESP_LOGI(TAG, "RoboMind-S3 started successfully");
+
+    ppm_bridge_start();
 
     // 运行 LVGL task 循环 (阻塞，永不返回)
     DisplayDriver::GetInstance()->RunLvglLoop();

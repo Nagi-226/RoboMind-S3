@@ -1,7 +1,15 @@
 # RoboMind-S3 Main Component
+
+file(READ "${CMAKE_CURRENT_LIST_DIR}/../../PPM/profiles/fatigue_lite.json" PPM_PROFILE_JSON)
+configure_file(
+    "${CMAKE_CURRENT_LIST_DIR}/ppm_profile.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/ppm_profile_generated.h"
+    @ONLY)
+
 idf_component_register(
     SRCS
         "main.cpp"
+        "ppm_bridge.cpp"
         "wifi_manager.cpp"
         "chat_engine.cpp"
         "display_driver.cpp"
@@ -12,6 +20,7 @@ idf_component_register(
         "system_monitor.cpp"
     INCLUDE_DIRS
         "."
+        "${CMAKE_CURRENT_BINARY_DIR}"
     REQUIRES
         nvs_flash
         esp_wifi
@@ -20,9 +29,14 @@ idf_component_register(
         esp_lcd
         lvgl
         json
+        ppm
     PRIV_REQUIRES
         driver
         esp_timer
         fatfs
         sdmmc
 )
+
+target_include_directories(${COMPONENT_LIB} PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/../../PPM/src/core"
+    "${CMAKE_CURRENT_LIST_DIR}/../../PPM/src/backend")

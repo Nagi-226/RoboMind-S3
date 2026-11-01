@@ -1,0 +1,7 @@
+/* 构建期生成，请勿手改（模板：main/ppm_profile.h.in）。
+ *
+ * 内容 = PPM 仓库 profiles/fatigue_lite.json 原文。
+ */
+static const char k_profile[] = R"ppmjson(
+@PPM_PROFILE_JSON@
+)ppmjson";
