@@ -125,6 +125,41 @@ producer 默认关闭（`CONFIG_ROBOMIND_PPM_PRODUCER_ENABLED=n`）：
 
 ---
 
+## 构建期闸门：AI 提示词必须含英文约束（`chat_engine.cpp`）
+
+### 为什么需要它
+
+`sdkconfig` 被 gitignore，而 IDF 的 `sdkconfig.defaults` **只补尚未存在的键**。
+别人 clone 后只拿到 defaults 的改动，本地 `sdkconfig` 里的旧值（中文提示词、字体未启用）继续生效
+⇒ **"UI 英文"决策静默失效**，编译、烧录、串口全都看不出来，只有盯着屏幕才发现是方框。
+
+所以把它变成**编译错误**，而不是靠人记得同步配置。
+
+### 实现
+
+`chat_engine.cpp` 里用 `constexpr` 字符串查找 + `static_assert`：
+
+```cpp
+static_assert(StrContains(CONFIG_ROBOMIND_AI_SYSTEM_PROMPT, "English"),
+              "[构建中止] … 不含 'English' 约束 …处置二选一 …");
+```
+
+（C 预处理器的 `#if` 无法判断字符串内容，所以用 C++ `constexpr` 在编译期做。）
+
+### 双向验证（不是"能编译就算数"）
+
+| 对照 | 输入 | 期望 | 实测 |
+|---|---|---|---|
+| **负向** | 中文提示词 `"你是一个车载机器人助手…"` | 编译失败 | ✅ `error: static assertion failed: [构建中止] 不含 English 约束` |
+| **正向** | `"You are RoboMind. Always respond in English only."` | 编译通过 | ✅ exit 0 |
+
+真实固件构建：exit 0 / 0 error / 0 warning，`.dram0.bss` 不变（`0x1ce28`）。
+
+> 这条闸门的意义：它是本项目第一个**拦在编译期**的静默失效防护。
+> 之前的防护（门禁检查、冒烟测试）都依赖"有人记得跑"，而这条不依赖。
+
+---
+
 ## 🔴 未完成项：`docs/screenshots/` 三张图
 
 **我没有能力对屏幕拍照或截屏**，这是硬限制，不是遗漏。

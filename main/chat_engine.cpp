@@ -22,6 +22,60 @@ extern "C" esp_err_t esp_crt_bundle_attach(void* conf);
 
 static const char* TAG = "chat_engine";
 
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 构建期校验：AI 系统提示词必须包含英文约束
+ *
+ * 为什么需要这道闸门（这是一条会**静默失败**的链路）：
+ *   屏幕字体是 lv_font_montserrat_*（纯拉丁字形），中文字符渲染成方框。
+ *   UI 固定文案已改英文，但**聊天正文来自 AI 回复** ——
+ *   若系统提示词没要求英文，AI 会用中文回，屏幕上就是满屏方块。
+ *
+ * 为什么不能只依赖 sdkconfig.defaults：
+ *   IDF 的 defaults 只补**尚未存在**的键。`sdkconfig`（被 gitignore）里该键已有旧值，
+ *   所以别人 clone 后只改 defaults **不会生效**，本地构建照样发中文提示词。
+ *   这个失效**在编译、烧录、串口上都看不出来**，只有盯着屏幕才发现。
+ *
+ * 所以把它变成编译错误：宁可编译失败，也不要静默显示方框。
+ * 处置方式见报错文本。
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+namespace {
+
+constexpr bool StrContains(const char *hay, const char *needle)
+{
+    if (needle == nullptr || *needle == '\0') {
+        return true;
+    }
+    for (const char *h = hay; (h != nullptr) && (*h != '\0'); ++h) {
+        const char *a = h;
+        const char *b = needle;
+        while ((*a != '\0') && (*b != '\0') && (*a == *b)) {
+            ++a;
+            ++b;
+        }
+        if (*b == '\0') {
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
+
+static_assert(StrContains(CONFIG_ROBOMIND_AI_SYSTEM_PROMPT, "English"),
+              "\n"
+              "  [构建中止] CONFIG_ROBOMIND_AI_SYSTEM_PROMPT 不含 'English' 约束。\n"
+              "\n"
+              "  原因是 UI 用 montserrat 拉丁字体，AI 若回中文会渲染成方框。\n"
+              "  你很可能只改了 sdkconfig.defaults —— 但 IDF 的 defaults 只补缺失键，\n"
+              "  本地 sdkconfig 里的旧值会继续生效，于是这里不通过。\n"
+              "\n"
+              "  处置（二选一）：\n"
+              "    1) 删掉本地 sdkconfig 后重新 configure（会丢 WiFi/API Key，先备份）；\n"
+              "    2) 手工把 sdkconfig 里的 CONFIG_ROBOMIND_AI_SYSTEM_PROMPT\n"
+              "       改成与 sdkconfig.defaults 一致（含 'Always respond in English only'）。\n");
+
 static TaskHandle_t s_chat_task = nullptr;
 static SemaphoreHandle_t s_request_sem = nullptr;
 static std::string s_pending_message;
