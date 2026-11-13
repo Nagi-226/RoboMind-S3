@@ -34,3 +34,10 @@ build/
 # 对外只需要 README.md 与本仓库既有的 docs 文档。
 docs/logs/
 build_*/
+
+# 内部工作文档（设计稿；与实现状态同步频率高，不适合对外）
+# ⚠️ 本仓库 docs/ 下多数文件是**要入库的**（hardware_spec / reviews / reference /
+# smoke / version_roadmap 等 21+ 个），所以这里只能用黑名单逐条排除，
+# 不能用「docs/* + !放行」的白名单写法 —— 那会把已入库的 21 个文件全排除掉。
+docs/PC_CONSOLE_DESIGN.md
+docs/UI_DESIGN.md
