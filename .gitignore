@@ -28,3 +28,9 @@ Thumbs.db
 *.map
 managed_components/
 build/
+
+# 测量证据日志（本地保留，不进仓库）
+# 含串口原始日志、内存对比、环境记录等开发过程产物；
+# 对外只需要 README.md 与本仓库既有的 docs 文档。
+docs/logs/
+build_*/

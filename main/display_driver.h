@@ -25,6 +25,10 @@ public:
     lv_disp_t* GetDisplay() const { return display_; }
     void SetBacklight(uint8_t percent);
 
+    /* 摄像头与背光共用这一颗 XL9555。再装一次 I2C 会把背光一起拆掉。 */
+    bool EnsureXl9555();
+    bool SetCameraPins(bool pwdn_high, bool reset_high);
+
 private:
     DisplayDriver() = default;
     ~DisplayDriver();
