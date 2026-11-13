@@ -22,6 +22,7 @@
 #include <cstring>
 
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lwip/inet.h"
@@ -75,10 +76,17 @@ void tcp_client_start(void)
 
     const unsigned before = static_cast<unsigned>(
         heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+    const unsigned free_before =
+        static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
     TaskHandle_t handle = nullptr;
     const BaseType_t ok =
         xTaskCreate([](void *) {
+            /* 判据 6 两点法：创建后的 free_internal（与 start() 里的 free_before 配对） */
+            std::printf("[tcp] free_internal_after_create=%u B\n",
+                        static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
+            std::fflush(stdout);
+
             ppm_producer_snapshot_t snap;
             std::memset(&snap, 0, sizeof(snap));
             uint32_t last_gen = 0;
@@ -110,6 +118,11 @@ void tcp_client_start(void)
                 dest.sin_family = AF_INET;
                 dest.sin_port = htons(static_cast<uint16_t>(kPort));
                 (void)inet_pton(AF_INET, kHost, &dest.sin_addr);
+
+                /* 判据 5：每次尝试打时间戳，PC 侧据此算间隔序列 */
+                std::printf("[tcp] connect_attempt t=%lldms backoff_idx=%d\n",
+                            static_cast<long long>(esp_timer_get_time() / 1000), backoff_idx);
+                std::fflush(stdout);
 
                 if (connect(sock, reinterpret_cast<struct sockaddr *>(&dest), sizeof(dest)) != 0) {
                     const int e = errno;
@@ -193,8 +206,8 @@ void tcp_client_start(void)
     if (ok != pdPASS) {
         std::printf("[tcp] task create FAILED (pdFAIL)\n");
     } else {
-        std::printf("[tcp] task started  stack=%u prio=%u  largest_before=%u B\n",
-                    kStackSize, static_cast<unsigned>(kPriority), before);
+        std::printf("[tcp] task started  stack=%u prio=%u  largest_before=%u  free_before=%u B\n",
+                    kStackSize, static_cast<unsigned>(kPriority), before, free_before);
         std::printf("[tcp] largest_after=%u B\n",
                     static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
     }
