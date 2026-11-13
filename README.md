@@ -120,6 +120,72 @@ app_main()
 
 ---
 
+## 🖥️ 配套 PC 端控制台
+
+板子的感知数据除了本地小屏显示，还可以**经 WiFi 推给 PC 端的 Qt 应用**：
+
+**[RoboMind-Console](https://github.com/Nagi-226/RoboMind_Console)** — 接收 11 字段 wire 帧并实时显示 PPM 状态
+
+### 数据流
+
+```
+RoboMind-S3（ESP32-S3）                        RoboMind-Console（PC）
+┌──────────────────────────┐                  ┌────────────────────────┐
+│ 摄像头                    │                  │  QTcpServer :9000      │
+│   ↓                      │                  │        ↓               │
+│ ppm_producer             │                  │  frame_stream          │
+│   ↓ ppm_run() ~105ms/帧  │                  │  （流式切帧，处理半包）  │
+│ ppm_semantics_t          │                  │        ↓               │
+│   ↓                      │                  │  MessageCodec::Decode  │
+│ wire_codec               │   TCP 9000       │        ↓               │
+│ 11 字段文本信封 ──────────┼─────────────────►│  PpmPanel 实时显示      │
+│ [u32 BE 长度] + 文本      │                  │                        │
+└──────────────────────────┘                  └────────────────────────┘
+```
+
+### 开关（**两个都默认关闭 ⇒ 默认固件零影响**）
+
+| Kconfig | 默认 | 作用 |
+|---|---|---|
+| `CONFIG_ROBOMIND_PPM_PRODUCER_ENABLED` | `n` | 感知生产者（本地小屏也需要它） |
+| `CONFIG_ROBOMIND_TCP_CLIENT_ENABLED` | `n` | TCP 上报（需上面同时打开） |
+| `CONFIG_ROBOMIND_TCP_CLIENT_HOST` | `192.168.101.4` | PC 的 IP |
+| `CONFIG_ROBOMIND_TCP_CLIENT_PORT` | `9000` | 端口 |
+
+**关闭时零影响**：`tcp_client.cpp` 用整文件 `#if` 门控 ⇒ 默认态该 TU 的符号不在镜像里、`.bss` 零增量。
+
+> ⚠️ 反面例子：`ppm_producer.cpp` 是「文件始终编译、只由 `main.cpp` 的 `#if` 控制是否调用」，所以它 **57 B 静态存储仍会进默认态 `.bss`**。加新功能时**照 `tcp_client` 那样整文件门控**。
+
+### 资源代价（真机实测）
+
+| 项 | 值 |
+|---|---|
+| 任务栈 | 4,096 B（峰值 **2,268 B**，余量 45%） |
+| `free_internal` 下降 | **4,444 B** |
+| 创建后 `largest` | **1,728 B** |
+| 帧率 | **~9.5 fps（105 ms/帧）** |
+
+⚠️ **两个必须知道的实测事实**：
+
+1. **`largest` 掉到 1,728 B ⇒ 这是这块板上最后一个能加的任务。** 后续任何需要连续内存的功能（音频、第二个网络连接）都得先砍别的。
+2. **帧率受相机约束，不是 70 ms 设计值。** `vTaskDelayUntil` 只在循环体短于周期时起作用；`esp_camera_fb_get()` 等一帧约 **105 ms > 70 ms**，所以那个 70 ms 的 delay **一直在空转**。**任何按 70 ms 推算缓冲 / 超时的计算都要改成 105 ms。**
+
+### 协议契约的真相源
+
+wire 格式的**真相源在 VVOS**（`MessageCodec` + wire 规格）。本仓库的 `main/wire_codec.cpp` 是**独立实现，不是共享代码**。
+
+| 想改什么 | 真相源 | 必须同步 |
+|---|---|---|
+| **帧格式 / 字段数** | VVOS `MessageCodec` + 规格 | 本仓库 `wire_codec.cpp` + Console 的 `testdata/` 基准包 |
+| 新增 topic | 本仓库 `wire_codec.cpp` | Console **无需改**（未知 topic 落 `RawPanel`） |
+| 新增 payload 字段 | PPM profile 的 `output.fields` | `wire_codec.cpp` 的 payload 语法 + Console 解析 |
+
+**「副本永远不是真相源」**：改 `wire_codec.cpp` 前**必须先看 `message_codec.cpp`**，只看规格不够 —— 本项目就发生过「规格写 8 字段、实现已支持 11」。
+
+跨仓库改动的完整联动清单见 [`docs/PROJECTS.md`](docs/PROJECTS.md)。
+
+---
+
 ## 🚀 快速开始
 
 ### 前置条件
