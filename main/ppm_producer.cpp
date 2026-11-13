@@ -190,6 +190,26 @@ void build_mock_frame(uint32_t seq, ppmi_mock_frame_t *mf)
 }
 #endif /* CONFIG_ROBOMIND_PPM_MOCK_FIXTURE */
 
+/*
+ * 生产者快照单槽（覆盖式）。
+ *
+ * 代价：约 48 B .bss（24 sem + 20 source + 4 gen）+ 1 B 有效标志 + 锁。
+ * 这是**产品功能必需**的共享状态，不是验证残留 —— TCP 任务要读它才能发帧。
+ */
+ppm_producer_snapshot_t g_snap       = {};
+volatile bool           g_snap_valid = false;
+portMUX_TYPE            g_snap_mux   = portMUX_INITIALIZER_UNLOCKED;
+
+void publish_snapshot(const ppm_semantics_t *sem, const char *source)
+{
+    portENTER_CRITICAL(&g_snap_mux);
+    g_snap.sem = *sem;
+    std::snprintf(g_snap.source, sizeof(g_snap.source), "%s", source);
+    ++g_snap.gen;
+    g_snap_valid = true;
+    portEXIT_CRITICAL(&g_snap_mux);
+}
+
 void producer_task(void *arg)
 {
     (void)arg;
@@ -334,6 +354,9 @@ void producer_task(void *arg)
              * 编码缓冲放**任务栈**（规格 §3.7）：静态段零增量。
              * 320 B 对 6,144 的栈预算可忽略，已计入余量。
              */
+            /* 每帧发布到单槽（TCP 任务从这里取最新值） */
+            publish_snapshot(&s, source);
+
             uint8_t line[kWireLineMax];
             const size_t n = wire_encode(&s, source, line, sizeof(line));
             if (n == 0u) {
@@ -366,6 +389,20 @@ void producer_task(void *arg)
 }
 
 }  // namespace
+
+bool ppm_producer_snapshot(ppm_producer_snapshot_t *out)
+{
+    if (out == nullptr) {
+        return false;
+    }
+    portENTER_CRITICAL(&g_snap_mux);
+    const bool ok = g_snap_valid;
+    if (ok) {
+        *out = g_snap;
+    }
+    portEXIT_CRITICAL(&g_snap_mux);
+    return ok;
+}
 
 void ppm_producer_start(void)
 {
