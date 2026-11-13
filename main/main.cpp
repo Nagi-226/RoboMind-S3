@@ -38,6 +38,7 @@
 #include "audio_io.h"
 #include "system_monitor.h"
 #include "ppm_producer.h"
+#include "tcp_client.h"
 
 static const char* TAG = "robo_main";
 
@@ -289,6 +290,12 @@ extern "C" void app_main(void)
      *   ③ 失败干净：xTaskCreate 返回 pdFAIL，不崩，打一行就定性
      * 默认开关为 n，本块不参与编译路径的行为（只包住调用点，不包住源文件）。 */
     ppm_producer_start();
+#endif
+
+#if CONFIG_ROBOMIND_TCP_CLIENT_ENABLED
+    /* 必须在 producer 之后启动：本任务依赖 producer 产出的快照。
+     * 关闭时本块不参与编译，默认固件行为不变。 */
+    tcp_client_start();
 #endif
 
     {

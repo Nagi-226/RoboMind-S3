@@ -420,4 +420,29 @@ menu "RoboMind S3 Configuration"
                  默认构建（本项为 n）不含夹具代码。
               3. 真后端（P2）接入时，本夹具与 ppmi_mock_begin_frame 一起删除。
 
+
+    menu "TCP uplink (PC console)"
+        config ROBOMIND_TCP_CLIENT_ENABLED
+            bool "启用 TCP 数据上报（上行，只读）"
+            default n
+            help
+                把 PPM 感知结果按 11 字段信封推给 PC 端控制台（M3）。
+
+                🔴 默认 n。关闭时：不创建任务、不占栈、不引用 socket 代码、
+                   静态段零增量（BRANCHING.md B 组判据）。
+
+                依赖 producer 产出快照；producer 关闭时本任务会一直等不到数据。
+
+        config ROBOMIND_TCP_CLIENT_HOST
+            string "PC server IP"
+            default "192.168.101.4"
+            depends on ROBOMIND_TCP_CLIENT_ENABLED
+
+        config ROBOMIND_TCP_CLIENT_PORT
+            int "PC server port"
+            default 9000
+            range 1024 65535
+            depends on ROBOMIND_TCP_CLIENT_ENABLED
+    endmenu
+
 endmenu

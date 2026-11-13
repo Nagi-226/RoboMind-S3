@@ -11,6 +11,7 @@ idf_component_register(
         "main.cpp"
         "ppm_producer.cpp"
         "wire_codec.cpp"
+        "tcp_client.cpp"
         "wifi_manager.cpp"
         "chat_engine.cpp"
         "display_driver.cpp"
