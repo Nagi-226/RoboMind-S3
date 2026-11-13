@@ -147,8 +147,8 @@ graph LR
 |---|---|---|---|
 | Virtual-Vehicle-OS | `master` | `13c46b0` | `Nagi-226/Virtual-Vehicle-OS` |
 | PPM | `master` | `625fbf4` | `git@github.com:Nagi-226/PPM.git`（**SSH**，其余三个是 HTTPS） |
-| RoboMind-S3 | `master` | `d9b48ba` | `Nagi-226/RoboMind-S3` |
-| RoboMind-Console | `master` | `c67941a` | ⚠️ **remote 已配但远程仓库尚未创建** —— `git push` 返回 `Repository not found`，待用户在 GitHub 建库后推送。**不要因为 `git remote -v` 有输出就认为可推** |
+| RoboMind-S3 | `master` | `2663057` | `Nagi-226/RoboMind-S3` |
+| RoboMind-Console | `master` | `75c16ca` | ✅ 已推送 **`Nagi-226/RoboMind_Console`**（⚠️ **GitHub 仓库名用下划线**，本地目录名用连字符 `RoboMind-Console` —— 不一致是有意的，改 URL 时照抄上面的） |
 
 **一条命令对齐全部**（HEAD）：
 
@@ -167,7 +167,7 @@ for d in Virtual-Vehicle-OS PPM RoboMind-S3 RoboMind-Console; do
 done
 ```
 
-**当前实测结果**：VVOS / PPM / RoboMind-S3 **可达 ✅**；**RoboMind-Console 不可达 ❌**（远程仓库尚未创建）。
+**当前实测结果**：四个仓库**全部可达 ✅**（2026-11-13 18:20 用 `ls-remote` 核实，Console 的远程仓库已创建并推送）。
 
 **当前状态要点**：
 
