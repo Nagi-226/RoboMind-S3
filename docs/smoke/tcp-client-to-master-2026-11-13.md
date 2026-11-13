@@ -55,7 +55,20 @@
 | # | 判据 | 结果 |
 |---|---|---|
 | D1 | 新增 TU 的 `.bss`/`.data` 贡献 | `tcp_client.cpp` 无静态缓冲（缓冲在栈上） |
-| D2 | producer 快照 | 约 48 B `.bss`（`sem` 24 + `source[20]` + `gen` 4 + 标志），仅 `PRODUCER_ENABLED=y` 时编译 |
+| D2 | producer 快照 | **57 B `.bss`**：`g_snap` 48 + `g_snap_valid` 1 + `g_snap_mux` 8 |
+| D3 | ⚠️ **默认态是否零增量** | **不是** —— 该 57 B **在默认态（producer 关）也存在**，见下 |
+
+> 🔴 **D3 的更正（实测）**：原表写"仅 `PRODUCER_ENABLED=y` 时编译"，**这句是错的**。
+> `nm build/robo_mind_s3.elf`（默认态）中仍有：
+> `g_snap`(0x30) / `g_snap_valid`(1) / `g_snap_mux`(8) = **57 B**。
+>
+> **原因**：该槽定义在 `ppm_producer.cpp` 的匿名命名空间里，**不在**
+> `#if CONFIG_ROBOMIND_PPM_PRODUCER_ENABLED` 之内 —— 该文件是"始终编译、
+> 只由 `main.cpp` 的 `#if` 决定是否调用"的结构。
+>
+> **影响**：默认固件多占 57 B（占 `.dram0.bss` 0x1ce18 ≈ 118 KB 的 0.05%）。
+> **建议独立小单**：给该槽加 `#if` 守卫 + 重测默认态，不阻塞本单合并。
+
 
 ## E · 栈与内存
 
@@ -106,6 +119,6 @@
 
 ## 结论
 
-**A–E 全部通过，符合合入 master 的条件。**
+**A–C、E 全部通过；D 有一项 57 B 未达"零增量"（已记录，建议独立小单跟进）。**
 
-破例项：无
+破例项：**D3 —— 默认态 `.bss` +57 B**（producer 快照槽未加 `#if` 守卫）
