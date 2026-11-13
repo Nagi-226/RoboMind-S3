@@ -101,6 +101,40 @@ void *const volatile g_ppm_link_anchor[] = {
 };
 
 /*
+ * 最近一帧语义快照，供 UI 读取（批 3 的感知胶囊用）。
+ *
+ * 为什么要快照而不是让 UI 直接读 PPM：PPM 的 ctx 是 producer 任务独占的，
+ * UI 在 LVGL 任务里读会数据竞争。24 字节结构体整体拷贝 + 临界区，代价可忽略。
+ *
+ * 代价：+24 B 结构 + 1 B 有效标志 + 4 B 自旋锁 ≈ 29 B .bss（在 producer，不在 UI）。
+ */
+ppm_semantics_t        g_latest     = {};
+volatile bool          g_latest_ok  = false;
+portMUX_TYPE           g_latest_mux = portMUX_INITIALIZER_UNLOCKED;
+
+/*
+ * 保证与 PPM 的枚举一致：UI 用头文件里的常量，不 include PPM 头。
+ * 两边的枚举是**不同类型**（ppm_sem_valid vs ppm_valid_t），直接比较会触发
+ * -Wenum-compare 警告，所以统一 static_cast<int> 再比 —— 比较的是数值契约，不是类型。
+ */
+static_assert(PPM_PRODUCER_DEGRADE_NO_FACE == PPM_DEGRADE_NO_FACE,
+              "NO_FACE bit must match PPM's enum");
+static_assert(static_cast<int>(PPM_SEM_VALID_OK) == static_cast<int>(PPM_VALID_OK),
+              "valid enum must match (OK)");
+static_assert(static_cast<int>(PPM_SEM_VALID_INVALID) == static_cast<int>(PPM_VALID_INVALID),
+              "valid enum must match (INVALID)");
+static_assert(static_cast<int>(PPM_SEM_VALID_NONE) == static_cast<int>(PPM_VALID_NONE),
+              "valid enum must match (NONE)");
+
+void publish_latest(const ppm_semantics_t *s)
+{
+    portENTER_CRITICAL(&g_latest_mux);
+    g_latest = *s;
+    g_latest_ok = true;
+    portEXIT_CRITICAL(&g_latest_mux);
+}
+
+/*
  * 生成 source = "ppm-<MAC 末2字节>-<boot 4hex>"（规格 §3.2）
  *
  * boot 标识取法（规格定案，不要改成毫秒）：
@@ -330,6 +364,9 @@ void producer_task(void *arg)
                 ++no_target;   /* 语义已改为"无目标帧数"（这些帧会真的发出去） */
             }
 
+            /* 先发布给 UI（无论下面编码是否成功，语义本身是有效的） */
+            publish_latest(&s);
+
             /*
              * 编码缓冲放**任务栈**（规格 §3.7）：静态段零增量。
              * 320 B 对 6,144 的栈预算可忽略，已计入余量。
@@ -366,6 +403,20 @@ void producer_task(void *arg)
 }
 
 }  // namespace
+
+bool ppm_producer_latest(ppm_semantics_t *out)
+{
+    if (out == nullptr) {
+        return false;
+    }
+    portENTER_CRITICAL(&g_latest_mux);
+    const bool ok = g_latest_ok;
+    if (ok) {
+        *out = g_latest;
+    }
+    portEXIT_CRITICAL(&g_latest_mux);
+    return ok;
+}
 
 void ppm_producer_start(void)
 {

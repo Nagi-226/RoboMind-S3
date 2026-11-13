@@ -28,6 +28,13 @@
 #include "wifi_manager.h"
 
 /*
+ * 感知状态来源。UI 只依赖 producer 的**快照接口**，不 include 任何 PPM 头 ——
+ * PPM 的 ABI 变化不该波及 UI。见 ppm_producer.h 的说明。
+ */
+#include "ppm_producer.h"
+#include "ppm_semantics.h"
+
+/*
  * 布局常量（UI_DESIGN.md §2.1，坐标即像素）
  *
  * 原来的尺寸是散落的魔数（32 / 60 / 22），且 msg_list 用
@@ -165,9 +172,13 @@ bool ChatUI::Initialize() {
     }
 
     CreateTitleBar();
+    CreatePerceptionCapsule();   /* 必须晚于 CreateTitleBar：胶囊挂在标题栏里 */
     CreateStatusBar();
     CreateMessageList();
     CreateInputArea();
+
+    /* 感知状态轮询：500 ms 一次。producer 未启用时 ppm_producer_latest 返回 false ⇒ 显示 N/A */
+    lv_timer_create(OnPerceptTimer, 500, this);
 
     // 验证关键对象
     if (!msg_list_ || !text_area_ || !send_btn_ || !status_label_) {
@@ -176,6 +187,19 @@ bool ChatUI::Initialize() {
     }
 
     ESP_LOGI(TAG, "ChatUI initialized");
+
+    /*
+     * LV_MEM 池水位（UI_DESIGN.md §12 判据 7）。
+     * 新增控件（胶囊 3 个 + 其它）全部从 LV_MEM_SIZE=64KB 池内分配，
+     * 打一条基线出来，后续加控件时才有对比依据。free_biggest < 8KB 视为危险线。
+     */
+    lv_mem_monitor_t mon;
+    std::memset(&mon, 0, sizeof(mon));
+    lv_mem_monitor(&mon);
+    ESP_LOGI(TAG, "LV_MEM used=%u%% frag=%u%% free=%u free_biggest=%u",
+             static_cast<unsigned>(mon.used_pct), static_cast<unsigned>(mon.frag_pct),
+             static_cast<unsigned>(mon.free_size), static_cast<unsigned>(mon.free_biggest_size));
+
     return true;
 }
 
@@ -226,6 +250,111 @@ void ChatUI::CreateTitleBar() {
     lv_obj_set_style_text_font(label, &lv_font_montserrat_16, LV_PART_MAIN);
     /* 左对齐 + 左内边距 8（§2.2 坐标表），右侧留给感知胶囊 */
     lv_obj_align(label, LV_ALIGN_LEFT_MID, 8, 0);
+}
+
+/*
+ * 感知状态胶囊（UI_DESIGN.md §7.3）
+ *
+ * 位置：标题栏右侧 96×20，**零新增行**（在已有 28px 标题栏内），不挤占聊天区。
+ * 组成：10×10 圆点 + 12px 文本。
+ *
+ * 为什么放标题栏而不是状态栏：这是产品的核心价值（感知状态），
+ * 塞进状态栏会和 WiFi/DRAM 等次要信息混排而被稀释。
+ */
+void ChatUI::CreatePerceptionCapsule() {
+    if (!title_bar_) return;
+
+    percept_capsule_ = lv_obj_create(title_bar_);
+    lv_obj_set_size(percept_capsule_, 96, 20);
+    lv_obj_align(percept_capsule_, LV_ALIGN_RIGHT_MID, -8, 0);
+    lv_obj_set_style_bg_color(percept_capsule_, th.surface2, LV_PART_MAIN);
+    lv_obj_set_style_radius(percept_capsule_, 10, LV_PART_MAIN);
+    lv_obj_set_style_border_width(percept_capsule_, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(percept_capsule_, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(percept_capsule_, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* 圆点 10×10。它是**图形元素**，对比度门槛 3.0（不是文字的 4.5） */
+    percept_dot_ = lv_obj_create(percept_capsule_);
+    lv_obj_set_size(percept_dot_, 10, 10);
+    lv_obj_set_style_radius(percept_dot_, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_border_width(percept_dot_, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(percept_dot_, th.text_disabled, LV_PART_MAIN);
+    lv_obj_align(percept_dot_, LV_ALIGN_LEFT_MID, 6, 0);
+    lv_obj_clear_flag(percept_dot_, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* 文本 12px。初值 N/A —— 首帧到达前就是"没有数据"，不能先显示"无人" */
+    percept_label_ = lv_label_create(percept_capsule_);
+    lv_label_set_text(percept_label_, "N/A");
+    lv_obj_set_style_text_font(percept_label_, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(percept_label_, th.text_secondary, LV_PART_MAIN);
+    lv_obj_align(percept_label_, LV_ALIGN_LEFT_MID, 20, 0);
+
+    percept_state_ = 0;   /* 0 = N/A，与上面初值一致 */
+}
+
+/*
+ * 7 档状态映射（§7.3）。文本用英文（用户已定 UI 英文）。
+ *
+ * 🔴 一条必须守住的语义：**"无人"绝不能用红色**。
+ *    红色表示"检测到需要干预的人"；"无人"是正常态。
+ *    用红色标无人，会让用户干脆关掉告警 —— 那就等于把功能做没了。
+ *
+ * 文字色都经复算（底为 surface2 #232838）：
+ *    success 6.46 / accent 8.02 / danger 4.84 / text_secondary 6.71 —— 全部 ≥4.5 ✓
+ *    text_disabled 只有 3.11（<4.5），所以它**只用于圆点**（图形门槛 3.0），不用于文字。
+ */
+void ChatUI::SetPerception(bool avail, bool no_face, uint8_t drowsy_valid, uint8_t drowsy_level) {
+    if (percept_capsule_ == nullptr || percept_dot_ == nullptr || percept_label_ == nullptr) {
+        return;
+    }
+
+    int         state = 0;
+    const char* text  = "N/A";
+    lv_color_t  dot   = th.text_disabled;
+    lv_color_t  txt   = th.text_secondary;
+
+    if (!avail) {
+        /* 无数据：producer 关闭或尚未产出。**不是**"无人" */
+        state = 0; text = "N/A";        dot = th.text_disabled;  txt = th.text_secondary;
+    } else if (no_face) {
+        /* 无人：中性蓝灰（正常态，非告警） */
+        state = 1; text = "No face";    dot = th.text_secondary; txt = th.text_secondary;
+    } else if (drowsy_valid == PPM_SEM_VALID_OK) {
+        switch (drowsy_level) {
+            case 0:  state = 2; text = "Normal";   dot = th.success; txt = th.success; break;
+            case 1:  state = 3; text = "Drowsy 1"; dot = th.accent;  txt = th.accent;  break;
+            case 2:  state = 4; text = "Drowsy 2"; dot = th.danger;  txt = th.danger;  break;
+            default: state = 5; text = "Drowsy 3"; dot = th.danger;  txt = th.danger;  break;
+        }
+    } else {
+        /* 检测到但结果不可信 */
+        state = 6; text = "Invalid";    dot = th.text_disabled;  txt = th.text_secondary;
+    }
+
+    /* §7.4：只在状态变化时刷，不做每帧重绘 */
+    if (state == percept_state_) {
+        return;
+    }
+    percept_state_ = state;
+
+    lv_obj_set_style_bg_color(percept_dot_, dot, LV_PART_MAIN);
+    lv_obj_set_style_text_color(percept_label_, txt, LV_PART_MAIN);
+    lv_label_set_text(percept_label_, text);
+}
+
+void ChatUI::OnPerceptTimer(lv_timer_t* t) {
+    auto* self = static_cast<ChatUI*>(t->user_data);
+    if (self == nullptr) return;
+
+    ppm_semantics_t s;
+    std::memset(&s, 0, sizeof(s));
+    if (!ppm_producer_latest(&s)) {
+        /* producer 未启用 / 还没产出首帧 —— 显示 N/A，绝不显示"无人" */
+        self->SetPerception(false, false, 0, 0);
+        return;
+    }
+    const bool no_face = (s.degrade & PPM_PRODUCER_DEGRADE_NO_FACE) != 0u;
+    self->SetPerception(true, no_face, s.drowsy_valid, s.drowsy_level);
 }
 
 void ChatUI::CreateStatusBar() {

@@ -34,6 +34,11 @@ public:
     /// 更新状态栏
     void SetStatus(ChatEngine::Status status, const std::string& info);
 
+    /// 更新 PPM 感知状态胶囊（标题栏右侧 96×20）
+    /// avail=false ⇒ 无数据（producer 关闭或尚未产出）→ 显示 "N/A"。
+    /// **注意：avail=false 绝不能显示成"无人"** —— "没有数据"与"确认没人"是两件事。
+    void SetPerception(bool avail, bool no_face, uint8_t drowsy_valid, uint8_t drowsy_level);
+
     /// 设置用户输入回调 (触摸发送 或 串口输入)
     using InputCallback = std::function<void(const std::string& text)>;
     void SetInputCallback(InputCallback callback);
@@ -55,6 +60,10 @@ private:
     void CreateInputArea();
     /// 创建状态指示器
     void CreateStatusBar();
+    /// 创建标题栏右侧的感知状态胶囊（UI_DESIGN.md §7.3）
+    void CreatePerceptionCapsule();
+    /// 感知状态轮询定时器回调：从 producer 拉快照并更新胶囊
+    static void OnPerceptTimer(lv_timer_t* t);
 
     /// 添加一条消息气泡到 UI
     lv_obj_t* AddMessageBubble(const std::string& role, const std::string& content);
@@ -75,6 +84,12 @@ private:
     lv_obj_t* text_area_{nullptr};
     lv_obj_t* send_btn_{nullptr};
     lv_obj_t* status_label_{nullptr};
+
+    /* 感知状态胶囊（§7.3：96×20，10×10 圆点 + 12px 文本，零新增行） */
+    lv_obj_t* percept_capsule_{nullptr};
+    lv_obj_t* percept_dot_{nullptr};
+    lv_obj_t* percept_label_{nullptr};
+    int percept_state_{-1};   /* 上次渲染的状态码；相同则不重绘（§7.4 只在变化时刷） */
 
     std::string pending_assistant_text_;  // 流式累积中的 assistant 消息
     lv_obj_t* pending_bubble_{nullptr};
