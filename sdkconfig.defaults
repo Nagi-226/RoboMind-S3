@@ -26,6 +26,19 @@ CONFIG_ROBOMIND_AI_API_ENDPOINT="https://api.deepseek.com/v1/chat/completions"
 CONFIG_ROBOMIND_AI_API_KEY="YOUR_DEEPSEEK_API_KEY_HERE"
 CONFIG_ROBOMIND_AI_MODEL_NAME="deepseek-chat"
 
+# AI 必须用英文回复（UI 用英文决策的连带项，不是偏好）
+# 原因：屏幕字体是 lv_font_montserrat_*，纯拉丁字形，中文字符渲染为空块/方框。
+# 界面固定文案已经是英文；但聊天正文来自 AI 回复 —— 若 AI 回中文，屏幕仍会满屏方框。
+# 所以这里强制英文输出，与 UI 语言保持一致。
+CONFIG_ROBOMIND_AI_SYSTEM_PROMPT="You are RoboMind, a concise and friendly in-vehicle robot assistant. Always respond in English only, regardless of the language the user writes in."
+
+# --- LVGL 字体（UI_DESIGN.md §3：三档字号）---
+# 12 = 状态栏 / 气泡角色标签；14 = 正文（不上调，17 汉字/行 > 15）；16 = 标题 / 感知胶囊
+CONFIG_LV_FONT_MONTSERRAT_12=y
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_16=y
+
+
 # --- LWIP ---
 CONFIG_LWIP_MAX_SOCKETS=8
 
