@@ -18,6 +18,7 @@
 #if CONFIG_ROBOMIND_TCP_CLIENT_ENABLED
 
 #include <cerrno>
+#include <fcntl.h>
 #include <cstdio>
 #include <cstring>
 
@@ -43,7 +44,8 @@ constexpr int         kPeriodMs  = 70;     /* 与 producer 同节拍 */
 constexpr int kBackoffMs[] = {5000, 10000, 20000, 30000};
 constexpr int kBackoffN    = static_cast<int>(sizeof(kBackoffMs) / sizeof(kBackoffMs[0]));
 
-constexpr int kSockTimeoutS = 2;   /* 避免 send/recv 永久阻塞本任务 */
+constexpr int kSockTimeoutS  = 2;   /* send/recv 超时 */
+constexpr int kConnectTimeoutS = 5;   /* 建连上限：让退避真正可控 */
 
 /*
  * 帧缓冲：**在任务栈上**（不引入静态缓冲）。
@@ -124,7 +126,48 @@ void tcp_client_start(void)
                             static_cast<long long>(esp_timer_get_time() / 1000), backoff_idx);
                 std::fflush(stdout);
 
-                if (connect(sock, reinterpret_cast<struct sockaddr *>(&dest), sizeof(dest)) != 0) {
+                /*
+                 * 非阻塞 connect + select + SO_ERROR 二次确认。
+                 *
+                 * 为什么不能用阻塞 connect：
+                 *   实测（判据 5）在无监听方时 connect() 阻塞约 18.5 s（lwIP SYN 重传），
+                 *   SO_SNDTIMEO 对它无效 ⇒ 可观测间隔 = 18.5s + 退避，
+                 *   "5s 退避"实际变成 ~24s，断网恢复后最坏 ~40s 才重连上。
+                 *
+                 * ⚠️ 关键坑：select 返回可写 != 连接成功。
+                 *   对端拒绝时 socket 也会变可写，错误只在 SO_ERROR 里。
+                 *   只看 select 返回值会把失败当成功，然后卡在 send 上。
+                 */
+                const int flags = fcntl(sock, F_GETFL, 0);
+                (void)fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+
+                int crc = connect(sock, reinterpret_cast<struct sockaddr *>(&dest), sizeof(dest));
+                if (crc < 0 && errno == EINPROGRESS) {
+                    fd_set wfds;
+                    FD_ZERO(&wfds);
+                    FD_SET(sock, &wfds);
+                    struct timeval ctv;
+                    ctv.tv_sec = kConnectTimeoutS;
+                    ctv.tv_usec = 0;
+                    const int sel = select(sock + 1, nullptr, &wfds, nullptr, &ctv);
+                    if (sel > 0) {
+                        int so_err = 0;
+                        socklen_t elen = sizeof(so_err);
+                        (void)getsockopt(sock, SOL_SOCKET, SO_ERROR, &so_err, &elen);
+                        if (so_err != 0) {
+                            errno = so_err;
+                            crc = -1;
+                        } else {
+                            crc = 0;   /* 真正连上 */
+                        }
+                    } else {
+                        /* sel == 0 超时 / sel < 0 出错：本次尝试失败，交给退避 */
+                        errno = (sel == 0) ? ETIMEDOUT : errno;
+                        crc = -1;
+                    }
+                }
+
+                if (crc != 0) {
                     const int e = errno;
                     close(sock);
                     back_to_listening("connect", e);
