@@ -37,7 +37,7 @@
 #include "sd_card.h"
 #include "audio_io.h"
 #include "system_monitor.h"
-#include "ppm_bridge.h"
+#include "ppm_producer.h"
 
 static const char* TAG = "robo_main";
 
@@ -122,8 +122,10 @@ static void pause_group(ChatUI *ui, const char *splash, int seconds)
 
 static volatile uint32_t g_lv_fires = 0;
 
-/* 取地址，不调用。否则链接器会把 PPM 的静态池裁掉。 */
-static void *volatile g_ppm_keep = reinterpret_cast<void *>(&ppm_bridge_start);
+/* 取地址，不调用。否则链接器会把 PPM 的静态池裁掉。
+ * U02：被锚定的对象从 ppm_bridge_start 换成 ppm_producer_start。
+ * ⚠️ 这行不能删 —— 删了 .dram0.bss 会凭空少 46,911 B，那是假的。 */
+static void *volatile g_ppm_keep = reinterpret_cast<void *>(&ppm_producer_start);
 
 static void lv_probe_cb(lv_timer_t* t)
 {
@@ -255,7 +257,9 @@ extern "C" void app_main(void)
         ui->ShowSplashScreen("RoboMind-S3", "AI Chatbot Ready");
     }
 
-    /* 摄像头不退场。不调用 ppm_bridge_start，也不调用 rg_release_camera。 */
+    /* 摄像头不退场。不调用 rg_release_camera。
+     * PPM producer 由 CONFIG_ROBOMIND_PPM_PRODUCER_ENABLED 控制，
+     * 开启时在 log_mem("after_chat") 之后启动（见上方 #if 块）。 */
     if (g_ppm_keep == nullptr) {
         std::printf("[ppm ] anchor missing\n");
         std::fflush(stdout);
@@ -276,6 +280,16 @@ extern "C" void app_main(void)
                 static_cast<long long>(elapsed_ms));
     std::fflush(stdout);
     log_mem("after_chat");
+
+#if CONFIG_ROBOMIND_PPM_PRODUCER_ENABLED
+    /* 规格 §2.8.2：插入点固定在 after_chat 之后、RunLvglLoop() 之前。
+     * 三条理由：
+     *   ① 保住 [mem] 五行与 R3g 的可比性（两份都不含 producer）
+     *   ② 此刻 largest 只剩 7,680 B，而栈要 6,144 B ⇒ 测的是最坏条件
+     *   ③ 失败干净：xTaskCreate 返回 pdFAIL，不崩，打一行就定性
+     * 默认开关为 n，本块不参与编译路径的行为（只包住调用点，不包住源文件）。 */
+    ppm_producer_start();
+#endif
 
     {
         sensor_t *s = esp_camera_sensor_get();
@@ -301,7 +315,8 @@ extern "C" void app_main(void)
     // 用户输入 → ChatEngine::SendMessage() → HTTP → SSE → UI 回调
     ESP_LOGI(TAG, "RoboMind-S3 started successfully");
 
-    /* 探针只证明 lv_timer_handler 还在走。不启动 PPM 测量任务。 */
+    /* 探针只证明 lv_timer_handler 还在走。
+     * PPM producer 不在这里启动 —— 它在 after_chat 之后的 #if 块里。 */
     if (lv_timer_create(lv_probe_cb, 100, nullptr) == nullptr) {
         std::printf("[lvgl] timer create failed\n");
         std::fflush(stdout);

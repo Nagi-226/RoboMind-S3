@@ -9,7 +9,8 @@ configure_file(
 idf_component_register(
     SRCS
         "main.cpp"
-        "ppm_bridge.cpp"
+        "ppm_producer.cpp"
+        "wire_codec.cpp"
         "wifi_manager.cpp"
         "chat_engine.cpp"
         "display_driver.cpp"

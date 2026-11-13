@@ -387,4 +387,37 @@ menu "RoboMind S3 Configuration"
                 Timeout for HTTP requests to the AI API.
     endmenu
 
+    config ROBOMIND_PPM_PRODUCER_ENABLED
+        bool "启动 PPM producer 任务（验证用，默认关闭）"
+        default n
+        help
+            开启后 main 会在聊天阶段之后创建 PPM producer 任务，
+            把 ppm_run 的结果编码成 11 字段信封并经 TCP 发出（U04 提供发送）。
+
+            默认 n：固件行为与 2026-11-13 之前完全一致（PPM 不运行、
+            不占任务栈、不碰摄像头之外的任何资源）。
+
+            开启方式（不改源码）：
+              idf.py -D CONFIG_ROBOMIND_PPM_PRODUCER_ENABLED=y build
+            或临时在 sdkconfig 里置 y。
+
+    config ROBOMIND_PPM_MOCK_FIXTURE
+        bool "注入 mock 合成语义夹具（仅供链路验证，默认关闭）"
+        default n
+        depends on ROBOMIND_PPM_PRODUCER_ENABLED
+        help
+            开启后 producer 每帧注入一份**脚本化的合成语义**（has_face=1、睁闭眼每 3.5s 切换），
+            让 target_count>0，从而走通"有目标"那条编码分支。
+
+            为什么需要它：不注入时 mock 后端 has_face=0 ⇒ target_count=0。
+            那条路径现在**也会发帧**（dv=N ev=N mv=N），但它是"无人脸"分支，
+            永远覆盖不到"有目标"分支的编码。两者需要分别验证。
+
+            🔴 严重警告：
+              1. 本夹具产出的是**合成值，不是真实感知**。在它开启期间，
+                 任何 wire 数据的语义（dl 疲劳等级、es 睁闭眼）**不可用于产品决策**。
+              2. 它**不得进入发布构建**。代码里有 #if defined(NDEBUG) 的 #error 拦截；
+                 默认构建（本项为 n）不含夹具代码。
+              3. 真后端（P2）接入时，本夹具与 ppmi_mock_begin_frame 一起删除。
+
 endmenu
