@@ -48,7 +48,29 @@ graph LR
 | ② | **CMake 子工程** | `RoboMind-Console/CMakeLists.txt`：`set(VVOS_ROOT "E:/Github Project/Virtual-Vehicle-OS" CACHE PATH ...)` + `add_subdirectory("${VVOS_ROOT}" vvos_build)` | **绝对路径，且不在 git 里** ⇒ 换机器必须 `-DVVOS_ROOT=...` |
 | ③ | **协议对齐（无代码共享）** | `RoboMind-S3/main/wire_codec.cpp` 是 `MessageCodec` 的**独立实现**；两侧靠测试向量对齐 | **一致性靠判据，不靠编译期** ⇒ 改格式必须两侧同步（见 §4） |
 
-> ⚠️ **依赖 ① 有一个隐藏契约**：`components/ppm` 用的是 `../../../PPM`，也就是**假定四个仓库位于同一父目录下**。把 PPM 挪走或改名，RoboMind-S3 立刻编不过——而报错信息是"找不到 `ppm_api.cpp`"，不会提示"目录布局不对"。
+### ⚠️ 致命前提：**四个仓库必须位于同一父目录下**
+
+`RoboMind-S3/components/ppm/CMakeLists.txt` 用的是 `../../../PPM` —— **假定四个仓库同级**。
+
+| 违反后果 | 具体 |
+|---|---|
+| 构建失败 | 报错是 **"找不到 `ppm_api.cpp`"** |
+| **但不提示真正原因** | **不会说"目录布局不对"** |
+| 排障第一反应会查错方向 | 查 CMakeLists 的 SRCS 列表、查 `ppm_api.cpp` 是否被删 —— **都查不到真正原因** |
+
+**clone 这个集群时必须按此布局放置，缺一不可**：
+
+```
+<任意父目录>/
+├─ Virtual-Vehicle-OS/
+├─ PPM/                 ← 必须是 RoboMind-S3 的同级兄弟
+├─ RoboMind-S3/
+└─ RoboMind-Console/
+```
+
+> **同族案例**（都是"报错位置与真实原因相距很远"）：`nm` 查不到符号 ⇏ 代码不在；`#if CONFIG` 判假 ⇏ 编译错误；**"找不到 PPM 源文件" ⇏ 源文件有问题**。
+>
+> **看到"找不到某个 PPM 源文件"时，第一件事是 `ls ..` 看父目录里有没有 `PPM/`，而不是打开 CMakeLists。**
 
 ---
 
@@ -128,13 +150,24 @@ graph LR
 | RoboMind-S3 | `master` | `d9b48ba` | `Nagi-226/RoboMind-S3` |
 | RoboMind-Console | `master` | `c67941a` | ⚠️ **remote 已配但远程仓库尚未创建** —— `git push` 返回 `Repository not found`，待用户在 GitHub 建库后推送。**不要因为 `git remote -v` 有输出就认为可推** |
 
-**一条命令对齐全部**：
+**一条命令对齐全部**（HEAD）：
 
 ```bash
 for d in Virtual-Vehicle-OS PPM RoboMind-S3 RoboMind-Console; do
   printf '%-22s ' "$d"; git -C "../$d" log --oneline -1 2>/dev/null || echo "(缺失)"
 done
 ```
+
+**一条命令验证远程是否真通**（**不能看 `git remote -v`**，它只证明本地配了路径）：
+
+```bash
+for d in Virtual-Vehicle-OS PPM RoboMind-S3 RoboMind-Console; do
+  printf '%-22s ' "$d"
+  git -C "../$d" ls-remote --heads origin >/dev/null 2>&1 && echo "可达 ✅" || echo "不可达 ❌"
+done
+```
+
+**当前实测结果**：VVOS / PPM / RoboMind-S3 **可达 ✅**；**RoboMind-Console 不可达 ❌**（远程仓库尚未创建）。
 
 **当前状态要点**：
 
