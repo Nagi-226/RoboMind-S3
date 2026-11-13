@@ -90,7 +90,7 @@ graph LR
 | **PPM 的配置（profile）** | **PPM**：`profiles/fatigue_lite.json` | RoboMind 构建时 `file(READ ...)` 生成 `ppm_profile_generated.h`（**构建期读取，不是源码副本**） |
 | **内存预算与真机实测** | **RoboMind-S3**：`docs/smoke/` | 所有内存结论 |
 | **分支模型与合并门禁** | **RoboMind-S3**：`docs/BRANCHING.md` | 全集群适用 |
-| **判据设计规范（怎么判断判据对不对）** | **VVOS**：`docs/three-way-integration-2026-11-13.md` §9 | 全集群适用 |
+| **判据设计规范（怎么判断判据对不对）** | **RoboMind-S3**：[`docs/criteria-design.md`](./criteria-design.md)（七条规则 + 四个变体 + 六种假绿灯 + 五问） | 全集群适用 |
 | **PC 端设计** | **RoboMind-S3**：`docs/PC_CONSOLE_DESIGN.md` | — |
 | **板端 UI 设计** | **RoboMind-S3**：`docs/UI_DESIGN.md` | — |
 
@@ -206,7 +206,7 @@ done
 | 知道 PPM 能产出什么字段 | PPM | `include/ppm.h` |
 | 知道板子现在有多少内存余量 | RoboMind-S3 | `docs/smoke/` |
 | 知道能不能合 master | RoboMind-S3 | `docs/BRANCHING.md` §3 |
-| 写一条新判据 | VVOS | `docs/three-way-integration-2026-11-13.md` §9 |
+| 写一条新判据 | RoboMind-S3 | [`docs/criteria-design.md`](./criteria-design.md) |
 | 改 PC 界面 | RoboMind-S3 | `docs/PC_CONSOLE_DESIGN.md` |
 | 改板子屏幕 | RoboMind-S3 | `docs/UI_DESIGN.md` |
 | 接一个新设备/新协议 | VVOS | 先用现有 11 字段格式（`topic` 前缀区分），不够再扩 |
