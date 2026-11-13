@@ -5,6 +5,13 @@
 >
 > **本文可进 git**（是给协作者看的，不是内部工作笔记）。
 > 维护位置：`RoboMind-S3/docs/PROJECTS.md`（选这里是因为 RoboMind-S3 是集成中心：固件与 PC 端都围绕它）。
+>
+> ⚠️ **跨仓引用一律用文字路径，不用 markdown 链接**。两个原因：
+> ① `[...](../../Other-Repo/x.md)` **在 GitHub 上 404** —— GitHub 不解析仓库外的相对路径；
+> ② 改成绝对 URL 也有前提 —— **目标文件必须真的入库**。本项目多数工作文档在 `.gitignore` 里
+> （评估报告 / 规格 / backlog / 工具链笔记），**入库的只有 `docs/smoke/` 与少数正式文档**。
+>
+> ⇒ 所以写成 `路径（✅ 在仓库里 / ⚠️ 本地未入库）` 的文字形式最可靠，本地和网页都能读懂。
 
 ---
 
@@ -78,7 +85,7 @@ graph LR
 
 | 主题 | **唯一真相源** | 副本 / 消费方 |
 |---|---|---|
-| **wire 帧格式**（字段数、分隔符、转义规则、长度前缀） | **VVOS**：`src/interconnect/message_codec.cpp` + 规格 [`u02-u03-implementation-spec`](../../Virtual-Vehicle-OS/docs/u02-u03-implementation-spec-2026-11-13.md) | RoboMind `wire_codec.cpp`（副本）、Console `frame_stream.h`（副本） |
+| **wire 帧格式**（字段数、分隔符、转义规则、长度前缀） | **VVOS**：`src/interconnect/message_codec.cpp`（✅ **在仓库里，可直接看**）+ 规格 `docs/u02-u03-implementation-spec-*.md`（⚠️ **本地工作文档，未入库** —— 不在 GitHub 上，需本地查看） | RoboMind `wire_codec.cpp`（副本）、Console `frame_stream.h`（副本） |
 | **PPM 的 C ABI** | **PPM**：`include/ppm.h` | RoboMind `ppm_producer.cpp`、`ppm_semantics.h` |
 | **PPM 的配置（profile）** | **PPM**：`profiles/fatigue_lite.json` | RoboMind 构建时 `file(READ ...)` 生成 `ppm_profile_generated.h`（**构建期读取，不是源码副本**） |
 | **内存预算与真机实测** | **RoboMind-S3**：`docs/smoke/` | 所有内存结论 |
