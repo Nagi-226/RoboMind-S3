@@ -7,6 +7,7 @@ set(PPM_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../PPM")
 
 idf_component_register(
     SRCS
+        "${PPM_ROOT}/src/api/ppm_api.cpp"
         "${PPM_ROOT}/src/core/ppm_json.cpp"
         "${PPM_ROOT}/src/core/ppm_config.cpp"
         "${PPM_ROOT}/src/core/ppm_ctx.cpp"
@@ -14,6 +15,7 @@ idf_component_register(
         "${PPM_ROOT}/src/pipeline/ppm_module.cpp"
         "${PPM_ROOT}/src/pipeline/ppm_sched.cpp"
         "${PPM_ROOT}/src/backend/ppm_mock.cpp"
+        "${PPM_ROOT}/src/backend/ppm_ref.cpp"
         "${PPM_ROOT}/src/decision/ppm_decision.cpp"
         "${PPM_ROOT}/src/decision/ppm_dec_drowsy.cpp"
         "${PPM_ROOT}/src/decision/ppm_dec_attention.cpp"
